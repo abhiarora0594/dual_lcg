@@ -17,7 +17,10 @@ Input parameters include:\n\
 #include "lcg_problem.h"  // Include parameters and macros
 #include "grid.cc" // grid class for mesh 
 #include "fem.cc" // fem class for shape fns, derivaties
-#include "dual_solve.cc"  // main class for gradient flow of dual variational principle
+#include "primal_solve.cc"
+#include "common_utilities.cc"
+#include "dual_solve.cc"  // main class for gradient flow or Newton raphson of dual variational principle
+
 
 using namespace std;
 
@@ -59,6 +62,15 @@ int main(int argc,char **args)
 
 	std::cout << "All classes constructed" << std::endl;
 
+	// contruct the primal solve class
+	ierr = dual_solve->contruct_primal_solve_class(); CHKERRQ(ierr);
+
+	// construct common utilities class
+	ierr = dual_solve->contruct_common_utilities_class(); CHKERRQ(ierr);
+
+	// set coupling
+	ierr = dual_solve->set_coupling(); CHKERRQ(ierr);
+
 	// dual solve
 	if (algorithm == gradient_flow){
 		ierr = dual_solve->gradient_flow(); CHKERRQ(ierr);	
@@ -75,7 +87,6 @@ int main(int argc,char **args)
 
 	std::cout << "All classes destructed" << std::endl;
 	
-
 	T=time(NULL);
 	tm=*localtime(&T);
 	PetscPrintf(PETSC_COMM_WORLD,"Current time is %02d:%02d:%02d \n",tm.tm_hour,tm.tm_min,tm.tm_sec);

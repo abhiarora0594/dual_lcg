@@ -275,7 +275,7 @@ PetscErrorCode Grid::mesh_trelis()
 			val = (R-r_0)*(R-r_0) + X_ref[i][0]*X_ref[i][0] + X_ref[i][1]*X_ref[i][1];
 			X_ref[i][0] = X_ref[i][0];//2.0*R*(R-r_0)*X_ref[i][0]/val;
 			X_ref[i][1] = X_ref[i][1];//2.0*R*(R-r_0)*X_ref[i][1]/val;
-			X_ref[i][2] = 0.0;// R + ((r_0-R)*2.0*R*(R-r_0)/val) - z_c;
+			X_ref[i][2] = R + ((r_0-R)*2.0*R*(R-r_0)/val) - z_c;
 		}
 	}
 

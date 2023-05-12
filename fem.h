@@ -1,6 +1,7 @@
 #ifndef FEM_H
 #define FEM_H
 
+class Grid;
 
 class Fem
 {

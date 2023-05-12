@@ -1,14 +1,15 @@
 #ifndef DUAL_SOLVE_H
 #define DUAL_SOLVE_H
 
+class Grid;
+class Fem;
+class Primal_Solve;
+class Common_Utilities;
 
 class Dual_Solve
 {
 
 private:
-	double lambda_1; // stretch imposed along director
-
-	double lambda_2; // stretch imposed in perp direction to director
 
 	PetscInt Istart,Iend;
 
@@ -24,7 +25,15 @@ public:
 
 	Grid *grid; // pointer to Grid class
 
+	Primal_Solve *primal_solve; // pointer to Primal_Solve class
+
+	Common_Utilities *common_utilities; // common utilities class
+
 	int dim; // inverse or forward
+
+	double lambda_1; // stretch imposed along director
+
+	double lambda_2; // stretch imposed in perp direction to director
 
 	int F_DOF;
 
@@ -168,6 +177,11 @@ public:
 	VecScatter 	ctx_xdef;
 	Vec  xdef_vec_SEQ;
 
+	// coupling to other classes
+	PetscErrorCode contruct_primal_solve_class();
+	PetscErrorCode contruct_common_utilities_class();
+	PetscErrorCode set_coupling();
+
 	// gradient flow methods
 	PetscErrorCode force_vector_assembly();
 
@@ -267,12 +281,13 @@ public:
 
 	inline PetscErrorCode get_div_A_field_at_gp(MyMat<double> , int , double *);
 
-	template<class T>
-	inline PetscErrorCode get_max_val(MyVec<T> v, T *val);
-
 	// initial condition methods
 
 	PetscErrorCode initial_condition_dual();
+
+	PetscErrorCode initial_condition_before_primal_solve();
+
+	PetscErrorCode initial_condition_after_primal_solve();
 
 	PetscErrorCode initial_condition_primal_to_dual();
 
@@ -324,29 +339,11 @@ public:
 	PetscErrorCode area_calculation();
 	
 	// petsc methods
-	PetscErrorCode mat_create_petsc(Mat &, int, int, int);
-
-	PetscErrorCode vec_create_petsc(Vec &, int);
-
-	PetscErrorCode ksp_mumps_solver_petsc(KSP &, Mat &, PC &, Mat &);
-
 	PetscErrorCode delete_petsc_objects();
 
 	PetscErrorCode copying_petsc_dual_vector_to_stdvector();
 
-	PetscErrorCode copying_dual_to_petsc_vector();
-
-	// outputs
-	PetscErrorCode vtk_write();
-
-	PetscErrorCode restart_write();
-
-	// small liner system solve
-	PetscErrorCode mysolve_local_linear_system(int , MyMat <double> ,
-												MyVec <double> , MyVec <double> &);
-
-	PetscErrorCode petsc_local_linear_system(int , MyMat <double> ,
-												MyVec <double> , MyVec <double> &);												
+	PetscErrorCode copying_dual_to_petsc_vector();												
 
 };
 

@@ -16,6 +16,7 @@
 #define Nprint 1
 #define EPS 0.1
 #define A_CONST 1e-4
+#define PEN 1.0
 
 enum MESH_INPUT
 {

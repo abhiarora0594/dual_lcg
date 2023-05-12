@@ -17,8 +17,8 @@ Dual_Solve::Dual_Solve(Fem *fem, Grid *grid, double lambda, double nu, \
 		this->dim = 2;
 		large_root = 1.0/std::pow(lambda,-nu);
 		small_root = 1.0/lambda;
-		this->lambda_1 = 1.0 + (3.0+1.0)*(large_root-1.0)/5.0;
-		this->lambda_2 = 1.0 - (3.0+1.0)*(1.0-small_root)/5.0;
+		this->lambda_1 = 1.0 + (4.0+1.0)*(large_root-1.0)/5.0;
+		this->lambda_2 = 1.0 - (4.0+1.0)*(1.0-small_root)/5.0;
 	}
 	else if (problem_type == forward){
 		this->dim = 3;
@@ -156,19 +156,7 @@ Dual_Solve::Dual_Solve(Fem *fem, Grid *grid, double lambda, double nu, \
 
   			ind_set_xi[grid->dof_per_node*i+d] = grid->dof_per_node*i+d;
   		}
-  	}
-
-  	// temporary variables
-	int xdef_dof = grid->ndof*this->dim;
-
-	std::cout << "xdef_dof is " << xdef_dof << std::endl;
-
-	this->mat_create_petsc(K_xdef,xdef_dof,30,25);// CHKERRQ(ierr);
-
-	this->vec_create_petsc(F_xdef,xdef_dof); //CHKERRQ(ierr);
-
-	this->vec_create_petsc(xdef_vec,xdef_dof); //CHKERRQ(ierr);
-
+	}
 
 }
 
@@ -224,6 +212,34 @@ Dual_Solve::~Dual_Solve()
 
 	delete[] x_def_vec;
 
+	// deleting classes
+	delete primal_solve;
+	delete common_utilities;
+}
+
+PetscErrorCode Dual_Solve::contruct_primal_solve_class()
+{
+	// constructing primal solve class
+	this->primal_solve = new Primal_Solve(this->fem,this->grid,this);
+
+	return 0;
+}
+
+
+PetscErrorCode Dual_Solve::contruct_common_utilities_class()
+{
+	// constructing primal solve class
+	this->common_utilities = new Common_Utilities(this->fem,this->grid,this);
+
+	return 0;
+}
+
+PetscErrorCode Dual_Solve::set_coupling()
+{
+	// primal solve couple
+	primal_solve->set_coupling(common_utilities);
+
+	return 0;
 }
 
 PetscErrorCode Dual_Solve::gradient_flow()
@@ -265,10 +281,19 @@ PetscErrorCode Dual_Solve::gradient_flow()
 					" " << "qf_global" << " " << "dual_diff" << std::endl;
 	}
 
-	ierr = this->vec_create_petsc(rhs_vec,grid->tdof); CHKERRQ(ierr);
-	ierr = this->vec_create_petsc(rhs_vec_final,grid->tdof); CHKERRQ(ierr);
-	ierr = this->vec_create_petsc(dual_vec,grid->tdof); CHKERRQ(ierr);
-	ierr = this->vec_create_petsc(mass_vec,grid->tdof); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(rhs_vec,grid->tdof); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(rhs_vec_final,grid->tdof); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(dual_vec,grid->tdof); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(mass_vec,grid->tdof); CHKERRQ(ierr);
+
+	// temporary variables
+	int xdef_dof = grid->ndof*this->dim;
+
+	std::cout << "xdef_dof is " << xdef_dof << std::endl;
+
+	ierr = common_utilities->mat_create_petsc(K_xdef,xdef_dof,30,25); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(F_xdef,xdef_dof); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(xdef_vec,xdef_dof); CHKERRQ(ierr);
 
 
 	try	
@@ -278,13 +303,21 @@ PetscErrorCode Dual_Solve::gradient_flow()
 
 		std::cout<< "area undef is " << undef_global << std::endl;
 
+		ierr = this->initial_condition_before_primal_solve(); CHKERRQ(ierr);
+
+		if (run_type == initial){
+			ierr = primal_solve->global_newton_raphson_primal(); CHKERRQ(ierr);
+		}
+
+		ierr = this->initial_condition_after_primal_solve(); CHKERRQ(ierr);
+
 		ierr = this->initial_condition_dual(); CHKERRQ(ierr);
 		
 		// ierr = this->initial_condition_primal_to_dual(); CHKERRQ(ierr);
 
 		ierr = this->get_dual_l2_norm(); CHKERRQ(ierr);
 
-		ierr = this->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
+		ierr = common_utilities->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
 
 		residual_conv = 1.0;
 	
@@ -296,8 +329,8 @@ PetscErrorCode Dual_Solve::gradient_flow()
 			}
 
 			if ( count == 0 && ::rank == 0){
-				ierr = this->vtk_write(); CHKERRQ(ierr);
-				ierr = this->restart_write(); CHKERRQ(ierr);
+				ierr = common_utilities->vtk_write(); CHKERRQ(ierr);
+				ierr = common_utilities->restart_write(); CHKERRQ(ierr);
 			}
 
 			ierr = this->force_vector_assembly(); CHKERRQ(ierr);
@@ -308,7 +341,7 @@ PetscErrorCode Dual_Solve::gradient_flow()
 
 			qf_global = std::sqrt(qf_global/undef_global);
 
-			ierr = this->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
+			ierr = common_utilities->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
 
 			t_step = t_step + dt_step;
 
@@ -342,16 +375,16 @@ PetscErrorCode Dual_Solve::gradient_flow()
 			}
 			
 			if ((step_no == 10 || step_no%Nprint==0) && ::rank==0){
-				ierr = this->vtk_write(); CHKERRQ(ierr);
-				ierr = this->restart_write(); CHKERRQ(ierr);	
+				ierr = common_utilities->vtk_write(); CHKERRQ(ierr);
+				ierr = common_utilities->restart_write(); CHKERRQ(ierr);	
 			}
 			
 
 		} // while loop ends here
 
 		if ((step_no%Nprint != 0) && ::rank==0){
-			ierr = this->vtk_write(); CHKERRQ(ierr);
-			ierr = this->restart_write(); CHKERRQ(ierr);	
+			ierr = common_utilities->vtk_write(); CHKERRQ(ierr);
+			ierr = common_utilities->restart_write(); CHKERRQ(ierr);	
 		}
 
 	}
@@ -406,18 +439,27 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 				<< " " << "qf_max" << " " << "qf_global"  << std::endl;
 	}	
 
-	ierr = this->vec_create_petsc(rhs_vec,grid->tdof); CHKERRQ(ierr);
-	ierr = this->vec_create_petsc(dual_vec,grid->tdof); CHKERRQ(ierr);
-	ierr = this->vec_create_petsc(delta_dual_vec,grid->tdof); CHKERRQ(ierr);
-	ierr = this->mat_create_petsc(K_dual,grid->tdof,100,100); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(rhs_vec,grid->tdof); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(dual_vec,grid->tdof); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(delta_dual_vec,grid->tdof); CHKERRQ(ierr);
+	ierr = common_utilities->mat_create_petsc(K_dual,grid->tdof,100,100); CHKERRQ(ierr);
 	ierr = VecSet(rhs_vec,0.0); CHKERRQ(ierr);
 	ierr = VecSet(delta_dual_vec,0.0); CHKERRQ(ierr);
 
-	ierr = this->vec_create_petsc(local_vec,F_DOF); CHKERRQ(ierr);
-	ierr = this->vec_create_petsc(Fe_local,F_DOF); CHKERRQ(ierr);
-	ierr = this->mat_create_petsc(Ke_local,F_DOF,F_DOF,F_DOF); CHKERRQ(ierr);
-	ierr = VecSet(local_vec,0.0); CHKERRQ(ierr);
-	ierr = VecSet(Fe_local,0.0); CHKERRQ(ierr);
+	// ierr = common_utilities->vec_create_petsc(local_vec,F_DOF); CHKERRQ(ierr);
+	// ierr = common_utilities->vec_create_petsc(Fe_local,F_DOF); CHKERRQ(ierr);
+	// ierr = common_utilities->mat_create_petsc(Ke_local,F_DOF,F_DOF,F_DOF); CHKERRQ(ierr);
+	// ierr = VecSet(local_vec,0.0); CHKERRQ(ierr);
+	// ierr = VecSet(Fe_local,0.0); CHKERRQ(ierr);
+
+	// temporary variables
+	int xdef_dof = grid->ndof*this->dim;
+
+	std::cout << "xdef_dof is " << xdef_dof << std::endl;
+
+	ierr = common_utilities->mat_create_petsc(K_xdef,xdef_dof,30,25); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(F_xdef,xdef_dof); CHKERRQ(ierr);
+	ierr = common_utilities->vec_create_petsc(xdef_vec,xdef_dof); CHKERRQ(ierr);
 
 	try	
 	{
@@ -426,11 +468,19 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 
 		std::cout<< "area undef is " << undef_global << std::endl;
 
+		ierr = this->initial_condition_before_primal_solve(); CHKERRQ(ierr);
+
+		if (run_type == initial){
+			ierr = primal_solve->global_newton_raphson_primal(); CHKERRQ(ierr);
+		}
+
+		ierr = this->initial_condition_after_primal_solve(); CHKERRQ(ierr);
+
 		ierr = this->initial_condition_dual(); CHKERRQ(ierr);
 
 		ierr = this->get_dual_l2_norm(); CHKERRQ(ierr);
 
-		ierr = this->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
+		ierr = common_utilities->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
 
 		residual_conv = 1.0;
 	
@@ -442,8 +492,8 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 			}
 
 			if ( count == 0 && ::rank == 0){
-				ierr = this->vtk_write(); CHKERRQ(ierr);
-				ierr = this->restart_write(); CHKERRQ(ierr);
+				ierr = common_utilities->vtk_write(); CHKERRQ(ierr);
+				ierr = common_utilities->restart_write(); CHKERRQ(ierr);
 			}
 
 
@@ -463,7 +513,7 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 
 			qf_global = std::sqrt(qf_global/undef_global);
 
-			ierr = this->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
+			ierr = common_utilities->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
 
 			step_no = step_no + 1;
 
@@ -491,16 +541,16 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 			}
 			
 			if ((step_no == 10 || step_no%Nprint==0) && ::rank==0){
-				ierr = this->vtk_write(); CHKERRQ(ierr);
-				ierr = this->restart_write(); CHKERRQ(ierr);	
+				ierr = common_utilities->vtk_write(); CHKERRQ(ierr);
+				ierr = common_utilities->restart_write(); CHKERRQ(ierr);	
 			}
 			
 
 		} // while loop ends here
 
 		if ((step_no%Nprint != 0) && ::rank==0){
-			ierr = this->vtk_write(); CHKERRQ(ierr);
-			ierr = this->restart_write(); CHKERRQ(ierr);	
+			ierr = common_utilities->vtk_write(); CHKERRQ(ierr);
+			ierr = common_utilities->restart_write(); CHKERRQ(ierr);	
 		}
 
 	}
@@ -603,55 +653,7 @@ PetscErrorCode Dual_Solve::area_calculation()
 PetscErrorCode Dual_Solve::initial_condition_dual()
 {	
 
-	PetscErrorCode ierr;
-
-	if (run_type == initial)
-	{
-		// deformed coordinates guess
-		if (mesh_input == cylindrical){
-			ierr = this->initial_guess_cylindrical(); CHKERRQ(ierr);
-		}
-		else if (mesh_input == plane){
-			ierr = this->initial_guess_plane(); CHKERRQ(ierr);
-		}
-		else if (mesh_input == trelis_mesh || mesh_input == spherical){
-			
-			// ierr = this->initial_guess_trelis(); CHKERRQ(ierr);
-
-			ierr = this->initial_guess_hat_shape(); CHKERRQ(ierr);
-		}
-	}
-	else if (run_type == restart)
-	{
-
-		std::ifstream myfile;
-
-		myfile.open("restart_x_def.txt",std::ios::in);
-
-		for(int i=0;i<grid->ndof;i++){
-
-			myfile >> x_def[i][0] >> x_def[i][1];	
-		}
-
-		myfile.close();
-	}
-
-	// for(int i=0;i<grid->ndof;i++){
-
-	// 	std::cout << x_def[i][0] << "  " << x_def[i][1] << std::endl;	
-	// } 
-
-
-	// get initial coordinates (x_gp) and deformation gradient tensor (F_gp) at gpts
-	if (run_type == restart_gp)
-	{
-		ierr = this->get_x_F_at_gps_restart_guess(); CHKERRQ(ierr);
-	}
-	else 
-	{	
-		ierr = this->get_x_F_at_gps_initial_guess(); CHKERRQ(ierr);	
-	}	
-
+	PetscErrorCode ierr;	
 
 	int indc[grid->dof_per_node];
 	double val[grid->dof_per_node];
@@ -687,6 +689,71 @@ PetscErrorCode Dual_Solve::initial_condition_dual()
 		ierr = VecAssemblyBegin(dual_vec); CHKERRQ(ierr);
 		ierr = VecAssemblyEnd(dual_vec); CHKERRQ(ierr);
 
+	}
+
+	return 0;
+}
+
+PetscErrorCode Dual_Solve::initial_condition_before_primal_solve()
+{
+
+	PetscErrorCode ierr;
+
+	if (run_type == initial)
+	{
+		// deformed coordinates guess
+		if (mesh_input == cylindrical){
+			ierr = this->initial_guess_cylindrical(); CHKERRQ(ierr);
+		}
+		else if (mesh_input == plane){
+			ierr = this->initial_guess_plane(); CHKERRQ(ierr);
+		}
+		else if (mesh_input == trelis_mesh || mesh_input == spherical){
+			
+			// ierr = this->initial_guess_trelis(); CHKERRQ(ierr);
+
+			ierr = this->initial_guess_hat_shape(); CHKERRQ(ierr);
+		}
+	}
+	else if (run_type == restart)
+	{
+
+		std::ifstream myfile;
+
+		myfile.open("restart_x_def.txt",std::ios::in);
+
+		for(int i=0;i<grid->ndof;i++){
+
+			myfile >> x_def[i][0] >> x_def[i][1];	
+		}
+
+		myfile.close();
+	}
+
+	return 0;
+}
+
+PetscErrorCode Dual_Solve::initial_condition_after_primal_solve()
+{ 
+
+	PetscErrorCode ierr;
+
+	if (run_type == initial){
+		for (int i=0;i<grid->ndof;i++){
+
+			this->x_def[i][0] = primal_solve->x_def[i][0];
+			this->x_def[i][1] = primal_solve->x_def[i][1];
+		}
+	}
+
+	// get initial coordinates (x_gp) and deformation gradient tensor (F_gp) at gpts
+	if (run_type == restart_gp)
+	{
+		ierr = this->get_x_F_at_gps_restart_guess(); CHKERRQ(ierr);
+	}
+	else 
+	{	
+		ierr = this->get_x_F_at_gps_initial_guess(); CHKERRQ(ierr);	
 	}
 
 	return 0;
@@ -957,7 +1024,8 @@ PetscErrorCode Dual_Solve::initial_guess_hat_shape()
 		r_max = std::max(r_max,tmp);
 	}
 
-	r_cr = r_def/r_max;
+	// r_cr = r_def/r_max;
+	r_cr = this->lambda_1; // equal lambda1 and lambda2
 
 	std::cout << "r max is " << r_max << " and ratio is " << r_cr << std::endl;
 
@@ -1277,7 +1345,7 @@ PetscErrorCode Dual_Solve::deformed_shape_l2_projection()
 	}
 
 	// creating the solver context
-	ierr = this->ksp_mumps_solver_petsc(ksp_xdef,K_xdef,pc_xdef,FF_xdef); CHKERRQ(ierr);
+	ierr = common_utilities->ksp_mumps_solver_petsc(ksp_xdef,K_xdef,pc_xdef,FF_xdef); CHKERRQ(ierr);
 	
 	//Solve the linear system
 	ierr = KSPSolve(ksp_xdef,F_xdef,xdef_vec);CHKERRQ(ierr);
@@ -3669,9 +3737,9 @@ PetscErrorCode Dual_Solve::local_newton_for_F(int gp, MyMat <double> beta_el, My
 
 		}
 
-		ierr = mysolve_local_linear_system(F_DOF,k_local,f_local,delta_F); CHKERRQ(ierr);
+		ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_local,delta_F); CHKERRQ(ierr);
 
-		// ierr = petsc_local_linear_system(F_DOF,k_local,f_local,delta_F); CHKERRQ(ierr);
+		// ierr = common_utilities->petsc_local_linear_system(F_DOF,k_local,f_local,delta_F); CHKERRQ(ierr);
 
 		// delta_F_norm and residual_local
 		delta_F_norm = 0.0; 
@@ -3921,7 +3989,7 @@ PetscErrorCode Dual_Solve::global_newton_solve()
 
 	// creating the solver context
 	if (this->count == 0){
-		ierr = this->ksp_mumps_solver_petsc(ksp_dual,K_dual,pc_dual,FF_dual); CHKERRQ(ierr);
+		ierr = common_utilities->ksp_mumps_solver_petsc(ksp_dual,K_dual,pc_dual,FF_dual); CHKERRQ(ierr);
 	}
 		
 	//Solve the linear system
@@ -3942,8 +4010,6 @@ PetscErrorCode Dual_Solve::global_newton_solve()
 
 	return 0;
 }
-
-
 
 PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> beta_el, MyMat <double> A_el, 
 											 MyMat <double> E_dual_el,  MyVec<double> detJ_e, double* rhs_el, 
@@ -4110,22 +4176,22 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 		}
 
 		// solve for dF^k_gamma/dbeta_1
-		ierr = this->mysolve_local_linear_system(F_DOF,k_local,f_beta_1,dF_dbeta_1); CHKERRQ(ierr);
+		ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_beta_1,dF_dbeta_1); CHKERRQ(ierr);
 
 		// solve for dF^k_gamma/dbeta_2
-		ierr = this->mysolve_local_linear_system(F_DOF,k_local,f_beta_2,dF_dbeta_2); CHKERRQ(ierr);
+		ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_beta_2,dF_dbeta_2); CHKERRQ(ierr);
 
 		// solve for dF^k_gamma/dA11
-		ierr = this->mysolve_local_linear_system(F_DOF,k_local,f_A11,dF_dA11); CHKERRQ(ierr);
+		ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_A11,dF_dA11); CHKERRQ(ierr);
 
 		// solve for dF^k_gamma/dA12
-		ierr = this->mysolve_local_linear_system(F_DOF,k_local,f_A12,dF_dA12); CHKERRQ(ierr);
+		ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_A12,dF_dA12); CHKERRQ(ierr);
 
 		// solve for dF^k_gamma/dA21
-		ierr = this->mysolve_local_linear_system(F_DOF,k_local,f_A21,dF_dA21); CHKERRQ(ierr);
+		ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_A21,dF_dA21); CHKERRQ(ierr);
 
 		// solve for dF^k_gamma/dA22
-		ierr = this->mysolve_local_linear_system(F_DOF,k_local,f_A22,dF_dA22); CHKERRQ(ierr);
+		ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_A22,dF_dA22); CHKERRQ(ierr);
 
 		ierr = fem->dot_product(d_mu1_F,dF_dbeta_1,&d_mu1_beta_1); CHKERRQ(ierr);
 		ierr = fem->dot_product(d_mu1_F,dF_dbeta_2,&d_mu1_beta_2); CHKERRQ(ierr);
@@ -5303,62 +5369,6 @@ inline PetscErrorCode Dual_Solve::get_C(MyMat<double> F_gp, MyMat <double> F_gp_
 }
 
 
-PetscErrorCode Dual_Solve::mat_create_petsc(Mat &K,int nofdof,int a,int b)
-{	
-
-	PetscErrorCode ierr;
-
-	ierr = MatCreate(PETSC_COMM_WORLD,&K);CHKERRQ(ierr); //Creates matrix
-	ierr = MatSetSizes(K,PETSC_DECIDE,PETSC_DECIDE,nofdof,nofdof);CHKERRQ(ierr);	//Reserves memory
-	ierr = MatSetFromOptions(K);CHKERRQ(ierr);
-	ierr = MatSeqAIJSetPreallocation(K,a,NULL);CHKERRQ(ierr);	// pre-allocation for no of non-zero entries per row
-	ierr = MatMPIAIJSetPreallocation(K,a,NULL,b,NULL);CHKERRQ(ierr);
-	ierr = MatSetUp(K);CHKERRQ(ierr); //Finilizes matrix creation
-
-	return 0;
-}
-
-PetscErrorCode Dual_Solve::vec_create_petsc(Vec &F,int nofdof)
-{
-	PetscErrorCode ierr;
-
-	ierr = VecCreate(PETSC_COMM_WORLD,&F); CHKERRQ(ierr);
-	ierr = VecSetSizes(F,PETSC_DECIDE,nofdof); CHKERRQ(ierr);
-	ierr = VecSetFromOptions(F);CHKERRQ(ierr);
-
-	return 0;
-}
-
-
-PetscErrorCode Dual_Solve::ksp_mumps_solver_petsc(KSP &ksp, Mat &KG,PC &pc, Mat &F)
-{	
-
-	PetscErrorCode ierr;
-
-	// linear solver and its various options
-	ierr = KSPCreate(PETSC_COMM_WORLD,&ksp); CHKERRQ(ierr);
-	ierr = KSPSetOperators(ksp,KG,KG);CHKERRQ(ierr);
-
-	//ierr = KSPSetType(ksp,KSPPREONLY); CHKERRQ(ierr);
-	// PetscInt  ival,icntl;
-	// PetscReal val;
-	ierr = KSPGetPC(ksp,&pc); CHKERRQ(ierr);
-
-	ierr = PCSetType(pc,PCLU);CHKERRQ(ierr);
-	// ierr = PCSetType(pc,PCJACOBI);CHKERRQ(ierr);
-
-	ierr = PCFactorSetMatSolverType(pc,MATSOLVERMUMPS); CHKERRQ(ierr);
-	//ierr = PCFactorSetUpMatSolverPackage(pc); CHKERRQ(ierr); /* call MatGetFactor() to create F */
-    //ierr = PCFactorGetMatrix(pc,&F); CHKERRQ(ierr);
-
-
-	//ierr = KSPSetTolerances(ksp,rtol,atol,dtol,maxits);CHKERRQ(ierr);
-	ierr = KSPSetFromOptions(ksp);CHKERRQ(ierr); //Finalizes set up of solver with default options
-    ierr =  KSPSetUp(ksp); CHKERRQ(ierr);
-
-	return 0;
-}
-
 
 PetscErrorCode Dual_Solve::delete_petsc_objects()
 {
@@ -5371,404 +5381,3 @@ PetscErrorCode Dual_Solve::delete_petsc_objects()
 	return 0;
 }
 
-
-PetscErrorCode Dual_Solve::vtk_write()
-{
-
-	std::ofstream myfile_vtk;
-	int el_type=9; // 9 for quad
-	int node_per_el= fem->node_per_el; // 4 for quad
-	std::string snapshot_time= "data at T = ";
-
-	std::string filename = "./outputs/fields_data_";
-
-	snapshot_time = snapshot_time + std::to_string(this->t_step);
-
-	filename = filename + std::to_string(this->step_no) + ".vtk";
-
-	myfile_vtk.open(filename, std::ios::out);
-
-	myfile_vtk << "# vtk DataFile Version 2.0" << "\r\n";
-	myfile_vtk << snapshot_time << "\r\n";
-	myfile_vtk << "ASCII" << "\r\n";
-	myfile_vtk << "DATASET UNSTRUCTURED_GRID" << "\r\n";
-	myfile_vtk << "POINTS " << grid->ndof << " double" << "\r\n";
-
-	if (this->step_no == 0){
-		for (int i=0;i<grid->ndof;++i){
-			myfile_vtk << std::fixed << std::setprecision(10) << grid->X_ref[i][0] << 
-						" " << grid->X_ref[i][1] << " " << grid->X_ref[i][2] << "\r\n";
-		}
-	}
-	else {
-		for (int i=0;i<grid->ndof;++i){
-			myfile_vtk << std::fixed << std::setprecision(10) << x_def[i][0] << 
-						" " << x_def[i][1] << " " << 0.0 << "\r\n";
-		}
-	}
-
-	myfile_vtk << "CELLS " << grid->nel << " " << grid->nel*(node_per_el+1) << "\r\n";
-
-	for (int i=0;i<grid->nel;++i){
-		myfile_vtk << node_per_el << " " << grid->el_conn[i][0] << " " << grid->el_conn[i][1] << " " << 
-							grid->el_conn[i][2] << " " << grid->el_conn[i][3] << "\r\n";
-	}
-
-	myfile_vtk << "CELL_TYPES" << " " << grid->nel << "\r\n";
-	for (int i=0;i<grid->nel;++i){
-		myfile_vtk << el_type << "\r\n";	
-	}
-
-	myfile_vtk << "CELL_DATA " << grid->nel << "\r\n";
-	// myfile_vtk << "SCALARS " << "norm_l2_x " << "double " << 1 << "\r\n";
-	// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	// for (int ie=0;ie<grid->nel;++ie){
-	// 	myfile_vtk << std::fixed << std::setprecision(10) << norm_global_x[ie] << "\r\n";
-	// }
-
-	// myfile_vtk << "SCALARS " << "norm_l2_F " << "double " << 1 << "\r\n";
-	// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	// for (int ie=0;ie<grid->nel;++ie){
-	// 	myfile_vtk << std::fixed << std::setprecision(10) << norm_global_F[ie] << "\r\n";
-	// }
-
-
-	myfile_vtk << "SCALARS " << "dual_eig1 " << "double " << 1 << "\r\n";
-	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << dual_S_mu1[ie] << "\r\n";
-	}
-
-	myfile_vtk << "SCALARS " << "dual_eig2 " << "double " << 1 << "\r\n";
-	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << dual_S_mu2[ie] << "\r\n";
-	}
-
-	myfile_vtk << "SCALARS " << "dual_F_dx " << "double " << 1 << "\r\n";
-	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << dual_S_F_dx[ie] << "\r\n";
-	}
-
-	myfile_vtk << "SCALARS " << "dual_H " << "double " << 1 << "\r\n";
-	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << dual_S_quad_H[ie] << "\r\n";
-	}
-
-	myfile_vtk << "SCALARS " << "dual_func_total " << "double " << 1 << "\r\n";
-	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << dual_S_norm[ie] << "\r\n";
-	}
-
-	myfile_vtk << "SCALARS " << "qfactor " << "double " << 1 << "\r\n";
-	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << qfactor[ie] << "\r\n";
-	}
-
-	myfile_vtk << "SCALARS " << "compatibility_check " << "double " << 1 << "\r\n";
-	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << compatibility_check[ie] << "\r\n";
-	}
-
-	myfile_vtk << "FIELD " << "fieldData " << 2 << "\r\n";
-	myfile_vtk << "x_gp " << this->dim << " " << grid->nel << " double" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << x_gp[ie][0][0] << " " << x_gp[ie][0][1] << "\r\n";
-	}
-
-	myfile_vtk << "F_gp " << F_DOF << " " << grid->nel << " double" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << F_gp[ie][0][0] << " " << F_gp[ie][0][1] << 
-							" " << F_gp[ie][0][2] << " " << F_gp[ie][0][3] << "\r\n";
-	}
-
-	myfile_vtk << "POINT_DATA " << grid->ndof << "\r\n";
-	myfile_vtk << "SCALARS " << "beta " << "double " << 2 << "\r\n";
-	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	for (int i=0;i<grid->ndof;++i){
-		myfile_vtk << std::fixed << std::setprecision(10) << beta[i][0] << " " << beta[i][1] << " " << "\r\n";
-	}
-
-	myfile_vtk << "SCALARS " << "A_dual " << "double " << grid->A_DOF << "\r\n";
-	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
-
-	for (int i=0;i<grid->ndof;++i){
-		myfile_vtk << std::fixed << std::setprecision(10) << A_dual[i][0] << " " << A_dual[i][1] 
-									<< " " << A_dual[i][2] << " " << A_dual[i][3] << "\r\n";
-	}
-
-	myfile_vtk.close();
-
-	return 0;	
-}
-
-
-PetscErrorCode Dual_Solve::restart_write()
-{
-
-	std::ofstream myfile1, myfile2, myfile3, myfile4;
-
-	std::string filename1 = "./restart/restart_x_gp_" + std::to_string(this->step_no) + ".txt";
-
-	myfile1.open(filename1, std::ios::out);
-
-	for (int ie=0;ie<grid->nel;++ie){
-		
-		for (int gp=0;gp<fem->ngp;gp++){
-			
-			myfile1 << std::fixed << std::setprecision(10) << x_gp[ie][gp][0] << " " << x_gp[ie][gp][1] << "\r\n";
-		}
-
-	}
-
-	myfile1.close();
-
-
-	std::string filename2 = "./restart/restart_F_gp_" + std::to_string(this->step_no) + ".txt";
-
-	myfile2.open(filename2, std::ios::out);
-
-	for (int ie=0;ie<grid->nel;++ie){
-
-		for (int gp=0;gp<fem->ngp;gp++){
-
-			myfile2 << std::fixed << std::setprecision(10) << F_gp[ie][gp][0] << " " << F_gp[ie][gp][1] << 
-									" " << F_gp[ie][gp][2] << " " << F_gp[ie][gp][3] << "\r\n";	
-		}
-	}
-
-	myfile2.close();
-
-
-	std::string filename3 = "./restart/restart_t_" + std::to_string(this->step_no) + ".txt";
-
-	myfile3.open(filename3, std::ios::out);
-
-	myfile3 << this->step_no << " " << std::fixed << std::setprecision(10) << this->t_step << "\r\n";	
-
-	myfile3.close();
-
-
-	std::string filename4 = "./restart/restart_x_def_" + std::to_string(this->step_no) + ".txt";
-
-	myfile4.open(filename4, std::ios::out);
-
-	for (int i=0;i<grid->ndof;++i){
-			
-		myfile4 << std::fixed << std::setprecision(10) << x_def[i][0] << " " << x_def[i][1] << "\r\n";
-
-	}
-
-	myfile4.close();
-
-	
-
-	return 0;	
-}
-
-template<class T>
-inline PetscErrorCode Dual_Solve::get_max_val(MyVec<T> v, T *val)
-{
-
-	double largest_element = 0.0; 
-
-	typename MyVec<T>::iterator it;
-
-	for (it = v.begin(); it != v.end(); it++)
-	{
-	    if(*it > largest_element)
-	    {
-	      largest_element = *it;
-	    }
-	}
-
-	*val = largest_element;
-
-	return 0;
-}
-
-
-PetscErrorCode Dual_Solve::mysolve_local_linear_system(int n, MyMat <double> k_local,
-														MyVec <double> f_local, MyVec <double> &x_local)
-{
-
-	// initialize L and U
-	MyMat <double> L(n,MyVec <double>(n));
-	MyMat <double> U(n,MyVec <double>(n));
-
-	MyVec <double> y(n);
-
-	for (int i=0;i<n;i++){
-		x_local[i] = 0.0;
-	}
-
-	double sum;
-
-	for(int i=0;i<n;i++){
-	 	U[i][i] = 1.0; // for Crout reduction
-	}
-
-	// Do the LU decomposition using the Crout reduction
-
-	for(int i=0;i<n;i++) 
-	{
-		// loop over pairs of L columns and U rows. The three levels of loop indicate n^3 behavior
-
-		// first, column i of L
-	 
-		for(int j=i;j<n;j++)
-		{ // i is the row
-			
-			sum=0.0;
-
-			for(int k=0;k<=i-1;k++)
-			{
-				sum = sum + L[j][k]*U[k][i];
-			}
-
-			L[j][i] = k_local[j][i] - sum;
-		}
-		
-		// second, row i of U
-		   
-		for(int j=i+1;j<n;j++)
-		{ // j is the column
-		   	
-		   	sum = 0.0;
-
-		   	for(int k=0;k<=i-1;k++)
-		   	{
-		    	sum = sum + L[i][k]*U[k][j];
-			}
-
-			if (std::abs(L[i][i]) < 1e-3){
-				throw "LU decomposition division by zero";
-			}
-		    U[i][j] = (k_local[i][j] - sum)/L[i][i];
-			
-		}
-	}
-
-	// solve the system of equations
-
-	// first, find the y vector
-
-	y[0] = f_local[0]/L[0][0];
-	
-	for(int i=1;i<n;i++) 
-	{
-	    sum = 0.0;
-	    
-	    for(int j=0;j<i;j++)
-	    {
-	   		sum = sum + L[i][j]*y[j];
-	    }	
-
-	   	if (std::abs(L[i][i]) < 1e-4){
-			throw "LU decomposition division by zero";
-		}
-	   	y[i] = (f_local[i]-sum)/L[i][i];
-	
-	}
-
-	// second, find the x vector
-
-	x_local[n-1] = y[n-1];
-
-	int j;
-
-	for(int i=1;i<n;i++) 
-	{
-		j = n-i-1;
-	   
-		sum = 0.0;
-	   
-	    for(int k=j+1;k<n;k++){
-	   		sum = sum + U[j][k]*x_local[k];
-	    }
-	   	
-	   	x_local[j] = y[j] - sum;
-	}
-
-	// for (int i=0; i<n; i++)
-	// {
-	// 	std::cout << "x_local is " << x_local[i] << std::endl;
-	// }	
-
-   return 0;
-}
-
-
-PetscErrorCode Dual_Solve::petsc_local_linear_system(int n, MyMat <double> k_local,
-														MyVec <double> f_local, MyVec <double> &x_local)
-{
-
-	PetscErrorCode ierr;
-
-	PetscReal rnorm;
-	PetscInt its;
-
-	int indc[n];
-	double ke_vec[n*n];
-
-	double l_vec[n];
-	double f_vec[n];
-
-	for (int i=0;i<n;i++){
-		indc[i] = i;
-		
-		for (int j=0;j<n;j++){
-			ke_vec[i*n+j] = k_local[i][j];
-		}
-		f_vec[i] = f_local[i];
-	}
-
-	ierr = VecSetValues(Fe_local,n,indc,f_vec,INSERT_VALUES); CHKERRQ(ierr);
-	ierr = MatSetValues(Ke_local,n,indc,n,indc,ke_vec,INSERT_VALUES); CHKERRQ(ierr);
-
-	// final assembly of global vector (due to multiple proccess)
-	ierr = VecAssemblyBegin(Fe_local); CHKERRQ(ierr);
-	ierr = VecAssemblyEnd(Fe_local); CHKERRQ(ierr);
-
-	// final assembly of global matrix (due to multiple proccess)
-	ierr = MatAssemblyBegin(Ke_local,MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
-	ierr = MatAssemblyEnd(Ke_local,MAT_FINAL_ASSEMBLY);CHKERRQ(ierr);
-
-	// creating a solver context
-	if (this->count == 0){
-		ierr = this->ksp_mumps_solver_petsc(ksp_local,Ke_local,pc_local,FF_local); CHKERRQ(ierr);
-	}
-
-	//Solve the linear system
-	ierr = KSPSolve(ksp_local,Fe_local,local_vec);CHKERRQ(ierr);
-
-	ierr = KSPGetResidualNorm(ksp_local,&rnorm); CHKERRQ(ierr);
-	ierr = KSPGetTotalIterations(ksp_local,&its); CHKERRQ(ierr);
-
-	ierr = VecGetValues(local_vec,n,indc,l_vec); CHKERRQ(ierr);	
-
-	for (int i=0; i<n; i++)
-	{
-		x_local[i] = l_vec[i];
-		std::cout << "x_local is " << x_local[i] << std::endl;
-	}	
-
-   return 0;
-}
