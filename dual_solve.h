@@ -83,6 +83,10 @@ public:
 
 	MyMat <double> A_dual; // A dual field (c^k and E_gamma basis)
 
+	MyMat <double> beta_rhs; // beta_1 and beta_2 (cartesian)
+
+	MyMat <double> A_dual_rhs; // A dual field (c^k and E_gamma basis)
+
 	MyMat <MyVec<double>> x_gp; // deformed coordinates at gpts (cartesian)
 
 	MyMat <MyVec<double>> F_gp; // F tensor in (c_k and E^gamma basis) at gpts
@@ -117,9 +121,17 @@ public:
 
 	double **x_def; // deformed co-ordinates
 
+	MyMat <double> x_0_def; // base state deformed co-ordinates
+
 	MyMat <MyVec<double>> x_0_gp; // base state deformed co-ordinates
 
 	MyMat <MyVec<double>> F_0_dual_gp; // F tensor for base state in (c^k and E_gamma basis) at gpts
+
+	MyMat <MyVec<double>> F_0_gp; // F tensor for base state in (c_k and E^gamma basis) at gpts
+
+	MyMat <MyVec <double>> Eig_1_gp;
+
+	MyMat <MyVec <double>> Eig_2_gp;
 
 	double *z_def; // z deformed coordinates.
 
@@ -177,6 +189,10 @@ public:
 	VecScatter 	ctx_xdef;
 	Vec  xdef_vec_SEQ;
 
+	// scattering data context to sequential vector
+	VecScatter 	ctx_res;
+	Vec  rhs_vec_SEQ;
+
 	// coupling to other classes
 	PetscErrorCode contruct_primal_solve_class();
 	PetscErrorCode contruct_common_utilities_class();
@@ -228,11 +244,33 @@ public:
 
 	PetscErrorCode global_newton_update();
 
-	PetscErrorCode global_newton_solve_bcs(Mat &, Vec &, Vec &);
+    PetscErrorCode global_newton_solve_bcs(Mat &, Vec &, Vec &);
 
-	PetscErrorCode elem_stiff_force_vector_global_newton(MyMat <double> , MyMat <double> , 
-											 MyMat <double> ,  MyVec<double> , double* , 
-											 double **, MyMat <double> ,  MyMat <double> );
+    PetscErrorCode elem_stiff_force_vector_global_newton(MyMat <double> , MyMat <double> , 
+											 MyMat <double> , MyMat <double>, MyVec<double> , double* , 
+											 double **, MyMat <double> ,  MyMat <double> , MyMat <double>,
+											 MyMat <double> &,  MyMat <double> &);
+
+	PetscErrorCode regularisation_residual_terms_calculation(int , MyMat <double> , MyVec <double> ,
+													MyMat <double> , MyMat <double> , MyMat <double> ,
+													MyMat <double> , MyMat <double> ,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &);
+	
+	PetscErrorCode regularisation_stiffness_terms_calculation(int , MyMat <double> , MyMat <double> ,
+															MyMat <double> , MyMat <double> ,
+															MyVec <double> &, MyVec <double> &,
+															MyVec <double> &, MyVec <double> &,
+															MyMat <double> &, MyMat <double> &,
+															MyMat <double> &, MyMat <double> &,
+															MyMat <double> &, MyMat <double> &,
+															MyMat <double> &, MyMat <double> &);
 
 	// helper methods 
 	PetscErrorCode get_derivative_of_mus(MyMat <double>, double, double,
@@ -264,6 +302,9 @@ public:
 
 	inline PetscErrorCode get_beta_field_at_gp(MyMat <double> , int , 
 												double *, double *);
+	
+	inline PetscErrorCode get_derivative_of_beta_at_gp(MyMat <double> , int ,
+															MyVec <double> , MyVec <double> );
 
 	inline PetscErrorCode get_invariants(double , double , double *, double *);
 
@@ -280,6 +321,13 @@ public:
 	inline PetscErrorCode get_C(MyMat<double> , MyMat <double> , MyMat <double> &);
 
 	inline PetscErrorCode get_div_A_field_at_gp(MyMat<double> , int , double *);
+
+	inline PetscErrorCode get_L2_norm_F_diff_F_0(MyMat<double> , MyMat<double> , 
+											MyMat<double> , MyMat<double> , double *);
+
+	inline PetscErrorCode eigenvectors_on_target_shape(MyVec <double> , MyVec <double> , 
+														MyMat <double> , MyMat <double> ,
+														MyVec <double> & , MyVec <double> &);
 
 	// initial condition methods
 

@@ -10,13 +10,17 @@
 #define TOTAL_STEPS 100
 #define STEP_NO 0
 #define TOL_GLOBAL 1e-3
-#define TOL_LOCAL 1e-5
-#define PX 1e2
+#define TOL_LOCAL 1e-6
+#define PX 1e5
 #define PF 1e10
 #define Nprint 1
-#define EPS 0.1
+#define EPS 1.0
 #define A_CONST 1e-4
-#define PEN 1.0
+#define PEN 1
+#define EPS1 0.0
+#define EPS2 0.0
+#define EPS3 1.0
+#define PP 2
 
 enum MESH_INPUT
 {
@@ -39,16 +43,23 @@ enum RUN_TYPE
 	restart_gp
 };
 
+enum DUAL_IC
+{
+	zero = 0,
+	non_zero
+};
+
 enum ALGORITHM
 {
 	gradient_flow = 0,
 	newton_raphson
 };
 
-MESH_INPUT mesh_input = cylindrical;
+MESH_INPUT mesh_input = spherical;
 PROBLEM_TYPE problem_type = inverse;
-RUN_TYPE run_type = initial;
+RUN_TYPE run_type = restart_gp;
 ALGORITHM algorithm = newton_raphson;
+DUAL_IC dual_ic = zero;
 
 
 template <typename T>

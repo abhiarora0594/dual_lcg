@@ -472,7 +472,9 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
 
     double dx2_zeta_1, dx2_zeta_2;
 
-    double scal1, scal2, scal3, scal4;
+    double scal1, scal2, scal3, scal4, scal5, scal6, scal7, scal8;
+
+    double scal9, scal10, scal11, scal12;
 
     MyMat <double> dF_zeta (dual_solve->F_DOF, MyVec <double> (2));
 
@@ -489,24 +491,50 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
     MyVec <double> F21_res2(fem->node_per_el);
     MyVec <double> F22_res2(fem->node_per_el);
 
+    MyVec <double> F11_res3(fem->node_per_el);
+    MyVec <double> F12_res3(fem->node_per_el);
+    MyVec <double> F21_res3(fem->node_per_el);
+    MyVec <double> F22_res3(fem->node_per_el);
+
+    MyVec <double> F11_res4(fem->node_per_el);
+    MyVec <double> F12_res4(fem->node_per_el);
+    MyVec <double> F21_res4(fem->node_per_el);
+    MyVec <double> F22_res4(fem->node_per_el);
+
     MyVec <double> v1(grid->X_DOF);
     MyVec <double> v2(grid->X_DOF);
     MyVec <double> v3(grid->X_DOF);
     MyVec <double> v4(grid->X_DOF);
 
-    MyVec <double> F11_stiff(dual_solve->F_DOF);
-    MyVec <double> F12_stiff(dual_solve->F_DOF);
-    MyVec <double> F21_stiff(dual_solve->F_DOF);
-    MyVec <double> F22_stiff(dual_solve->F_DOF);
+    MyVec <double> E_dual(grid->X_DOF);
+    MyVec <double> E_dual2(grid->X_DOF);
+    MyVec <double> E_dual3(grid->X_DOF);
+
+    MyVec <double> F11_stiff1(dual_solve->F_DOF);
+    MyVec <double> F12_stiff1(dual_solve->F_DOF);
+    MyVec <double> F21_stiff1(dual_solve->F_DOF);
+    MyVec <double> F22_stiff1(dual_solve->F_DOF);
+
+    MyMat <double> F11_stiff2(fem->node_per_el, MyVec <double> (dual_solve->F_DOF));
+    MyMat <double> F12_stiff2(fem->node_per_el, MyVec <double> (dual_solve->F_DOF));
+    MyMat <double> F21_stiff2(fem->node_per_el, MyVec <double> (dual_solve->F_DOF));
+    MyMat <double> F22_stiff2(fem->node_per_el, MyVec <double> (dual_solve->F_DOF));
+
+    MyMat <double> F11_stiff3(fem->node_per_el, MyVec <double> (dual_solve->F_DOF));
+    MyMat <double> F12_stiff3(fem->node_per_el, MyVec <double> (dual_solve->F_DOF));
+    MyMat <double> F21_stiff3(fem->node_per_el, MyVec <double> (dual_solve->F_DOF));
+    MyMat <double> F22_stiff3(fem->node_per_el, MyVec <double> (dual_solve->F_DOF));
 
     // derivative of F_gp and E_dual wrt \xi coordinates at gpts
-    for (int k=0;k<fem->ngp;k++){
-        for (int j=0;j<dual_solve->F_DOF; j++){
+    for (int j=0;j<dual_solve->F_DOF; j++){
+        for (int k=0;k<fem->ngp;k++){
             dF_zeta[j][0] = dF_zeta[j][0] + fem->dpsi_c[k][0]*F_gp[k][j];
             dF_zeta[j][1] = dF_zeta[j][1] + fem->dpsi_c[k][1]*F_gp[k][j]; 
         }
+    }
 
-        for (int j=0;j<grid->X_DOF;j++){
+    for (int j=0;j<grid->X_DOF;j++){
+        for (int k=0;k<fem->ngp;k++){
             dE1_dual_zeta[j][0] = dE1_dual_zeta[j][0] + fem->dpsi_c[k][0]*E_dual_el[k][j];
             dE1_dual_zeta[j][1] = dE1_dual_zeta[j][1] + fem->dpsi_c[k][1]*E_dual_el[k][j];
 
@@ -514,6 +542,7 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
             dE2_dual_zeta[j][1] = dE2_dual_zeta[j][1] + fem->dpsi_c[k][1]*E_dual_el[k][grid->X_DOF + j];
         }
     }
+    
 
     // loop over the gauss points begin
     for (int i=0;i<fem->ngp;i++)
@@ -592,10 +621,21 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
             F21_res2[p] = 0.0;
             F22_res2[p] = 0.0;
 
+            F11_res3[p] = 0.0;
+            F12_res3[p] = 0.0;
+            F21_res3[p] = 0.0;
+            F22_res3[p] = 0.0;
+
+            F11_res4[p] = 0.0;
+            F12_res4[p] = 0.0;
+            F21_res4[p] = 0.0;
+            F22_res4[p] = 0.0;
+
             for (int delta=0; delta<2; delta++){
                 for (int alpha=0; alpha<2; alpha++){
                     for (int beta=0; beta<2; beta++){
                         
+                        // 1st term in residual from grad F
                         F11_res1[p] = F11_res1[p] + dF_zeta[delta][alpha]*fem->dpsi[i][p][beta]*
                                                             G_dual[delta][0]*G_dual[alpha][beta];
                         
@@ -622,6 +662,10 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                             v1[2] = dE2_dual_zeta[2][alpha];
                         }
 
+                        E_dual[0] = E_dual_el[i][grid->X_DOF*delta];
+                        E_dual[1] = E_dual_el[i][grid->X_DOF*delta+1];
+                        E_dual[2] = E_dual_el[i][grid->X_DOF*delta+2];
+
                         v2[0] = dE1_dual_zeta[0][beta];
                         v2[1] = dE1_dual_zeta[1][beta];
                         v2[2] = dE1_dual_zeta[2][beta];
@@ -632,14 +676,53 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
 
                         scal1 = 0.0;
                         scal2 = 0.0;
+                        scal3 = 0.0;
+                        scal4 = 0.0;
+                        scal5 = 0.0;
+                        scal6 = 0.0;
+
+                        E_dual2[0] = E_dual_el[i][0];
+                        E_dual2[1] = E_dual_el[i][1];
+                        E_dual2[2] = E_dual_el[i][2];
+
+                        E_dual3[0] = E_dual_el[i][grid->X_DOF];
+                        E_dual3[1] = E_dual_el[i][grid->X_DOF+1];
+                        E_dual3[2] = E_dual_el[i][grid->X_DOF+2];
 
                         ierr = fem->dot_product(v1,v2,&scal1); CHKERRQ(ierr);
                         ierr = fem->dot_product(v1,v3,&scal2); CHKERRQ(ierr);
 
+                        ierr = fem->dot_product(E_dual,v2,&scal3); CHKERRQ(ierr);
+                        ierr = fem->dot_product(E_dual,v3,&scal4); CHKERRQ(ierr);
+
+                        ierr = fem->dot_product(v1,E_dual2,&scal5); CHKERRQ(ierr);
+                        ierr = fem->dot_product(v1,E_dual3,&scal6); CHKERRQ(ierr);
+
+                        // 2nd term in residual from grad F
                         F11_res2[p] = F11_res2[p] + fem->psi[i][p]*F[0][delta]*G_dual[alpha][beta]*scal1;
                         F12_res2[p] = F12_res2[p] + fem->psi[i][p]*F[0][delta]*G_dual[alpha][beta]*scal2;
                         F21_res2[p] = F21_res2[p] + fem->psi[i][p]*F[1][delta]*G_dual[alpha][beta]*scal1;
                         F22_res2[p] = F22_res2[p] + fem->psi[i][p]*F[1][delta]*G_dual[alpha][beta]*scal2;
+
+                        // 3rd term in residual from grad F
+                        F11_res3[p] = F11_res3[p] + dF_zeta[delta][alpha]*fem->psi[i][p]*
+                                                            G_dual[alpha][beta]*scal3;
+                        
+                        F12_res3[p] = F12_res3[p] + dF_zeta[delta][alpha]*fem->psi[i][p]*
+                                                            G_dual[alpha][beta]*scal4;
+                        
+                        F21_res3[p] = F21_res3[p] + dF_zeta[dual_solve->dim + delta][alpha]*fem->psi[i][p]*
+                                                            G_dual[alpha][beta]*scal3;
+                        
+                        F22_res3[p] = F22_res3[p] + dF_zeta[dual_solve->dim + delta][alpha]*fem->psi[i][p]*
+                                                            G_dual[alpha][beta]*scal4;
+
+                        // 4th term in residual from grad F
+                        F11_res4[p] = F11_res4[p] + fem->dpsi[i][p][beta]*F[0][delta]*G_dual[alpha][beta]*scal5;
+                        F12_res4[p] = F12_res4[p] + fem->dpsi[i][p][beta]*F[0][delta]*G_dual[alpha][beta]*scal6;
+                        F21_res4[p] = F21_res4[p] + fem->dpsi[i][p][beta]*F[1][delta]*G_dual[alpha][beta]*scal5;
+                        F22_res4[p] = F22_res4[p] + fem->dpsi[i][p][beta]*F[1][delta]*G_dual[alpha][beta]*scal6;
+
                     }
                 }
             }
@@ -648,17 +731,32 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
 
         // calculation of some coeffs for stiffness matrix in elliptic term
         for (int k=0; k<dual_solve->F_DOF; k++){   
-            F11_stiff[k] = 0.0;
-            F12_stiff[k] = 0.0;
+            F11_stiff1[k] = 0.0;
+            F12_stiff1[k] = 0.0;
+            F21_stiff1[k] = 0.0;
+            F22_stiff1[k] = 0.0;
+
+            for (int p=0; p<fem->node_per_el; p++){
+                F11_stiff2[p][k] = 0.0;
+                F12_stiff2[p][k] = 0.0;
+                F21_stiff2[p][k] = 0.0;
+                F22_stiff2[p][k] = 0.0;
+
+                F11_stiff3[p][k] = 0.0;
+                F12_stiff3[p][k] = 0.0;
+                F21_stiff3[p][k] = 0.0;
+                F22_stiff3[p][k] = 0.0;
+            }
         }    
 
         for (int alpha=0; alpha<2; alpha++){
             for (int beta=0; beta<2; beta++){
 
-                scal1 = 0.0;
-                scal2 = 0.0;
-                scal3 = 0.0;
-                scal4 = 0.0;
+                scal1 = 0.0; scal2 = 0.0; scal3 = 0.0; scal4 = 0.0;
+
+                scal5 = 0.0; scal6 = 0.0; scal7 = 0.0; scal8 = 0.0;
+
+                scal9 = 0.0; scal10 = 0.0; scal11 = 0.0; scal12 = 0.0;
 
                 v1[0] = dE1_dual_zeta[0][alpha];
                 v1[1] = dE1_dual_zeta[1][alpha];
@@ -676,27 +774,79 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                 v4[1] = dE2_dual_zeta[1][beta];
                 v4[2] = dE2_dual_zeta[2][beta];
 
+                E_dual2[0] = E_dual_el[i][0];
+                E_dual2[1] = E_dual_el[i][1];
+                E_dual2[2] = E_dual_el[i][2];
+
+                E_dual3[0] = E_dual_el[i][grid->X_DOF];
+                E_dual3[1] = E_dual_el[i][grid->X_DOF+1];
+                E_dual3[2] = E_dual_el[i][grid->X_DOF+2];
+
                 ierr = fem->dot_product(v1,v2,&scal1); CHKERRQ(ierr);
                 ierr = fem->dot_product(v3,v2,&scal2); CHKERRQ(ierr);
 
                 ierr = fem->dot_product(v1,v4,&scal3); CHKERRQ(ierr);
                 ierr = fem->dot_product(v3,v4,&scal4); CHKERRQ(ierr);
 
+                ierr = fem->dot_product(E_dual2,v2,&scal5); CHKERRQ(ierr);
+                ierr = fem->dot_product(E_dual3,v2,&scal6); CHKERRQ(ierr);
+
+                ierr = fem->dot_product(E_dual2,v4,&scal7); CHKERRQ(ierr);
+                ierr = fem->dot_product(E_dual3,v4,&scal8); CHKERRQ(ierr);
+
+                ierr = fem->dot_product(E_dual2,v1,&scal9); CHKERRQ(ierr);
+                ierr = fem->dot_product(E_dual3,v1,&scal10); CHKERRQ(ierr);
+
+                ierr = fem->dot_product(E_dual2,v3,&scal11); CHKERRQ(ierr);
+                ierr = fem->dot_product(E_dual3,v3,&scal12); CHKERRQ(ierr);
+
+                // term 1 
                 // F11
-                F11_stiff[0] = F11_stiff[0] + scal1*G_dual[alpha][beta];
-                F11_stiff[1] = F11_stiff[1] + scal2*G_dual[alpha][beta];
+                F11_stiff1[0] = F11_stiff1[0] + scal1*G_dual[alpha][beta];
+                F11_stiff1[1] = F11_stiff1[1] + scal2*G_dual[alpha][beta];
 
                 // F12
-                F12_stiff[0] = F12_stiff[0] + scal3*G_dual[alpha][beta];
-                F12_stiff[1] = F12_stiff[1] + scal4*G_dual[alpha][beta];
+                F12_stiff1[0] = F12_stiff1[0] + scal3*G_dual[alpha][beta];
+                F12_stiff1[1] = F12_stiff1[1] + scal4*G_dual[alpha][beta];
 
                 // F21
-                F21_stiff[2] = F21_stiff[2] + scal1*G_dual[alpha][beta];
-                F21_stiff[3] = F21_stiff[3] + scal2*G_dual[alpha][beta];
+                F21_stiff1[2] = F21_stiff1[2] + scal1*G_dual[alpha][beta];
+                F21_stiff1[3] = F21_stiff1[3] + scal2*G_dual[alpha][beta];
 
                 // F22
-                F22_stiff[2] = F22_stiff[2] + scal3*G_dual[alpha][beta];
-                F22_stiff[3] = F22_stiff[3] + scal4*G_dual[alpha][beta];
+                F22_stiff1[2] = F22_stiff1[2] + scal3*G_dual[alpha][beta];
+                F22_stiff1[3] = F22_stiff1[3] + scal4*G_dual[alpha][beta];
+
+                // term 2
+                for (int p=0; p<fem->node_per_el; p++){
+                    F11_stiff2[p][0] = F11_stiff2[p][0] + scal5*G_dual[alpha][beta]*fem->dpsi[i][p][alpha];
+                    F11_stiff2[p][1] = F11_stiff2[p][1] + scal6*G_dual[alpha][beta]*fem->dpsi[i][p][alpha];
+
+                    F12_stiff2[p][0] = F12_stiff2[p][0] + scal7*G_dual[alpha][beta]*fem->dpsi[i][p][alpha];
+                    F12_stiff2[p][1] = F12_stiff2[p][1] + scal8*G_dual[alpha][beta]*fem->dpsi[i][p][alpha];
+
+                    F21_stiff2[p][2] = F21_stiff2[p][2] + scal5*G_dual[alpha][beta]*fem->dpsi[i][p][alpha];
+                    F21_stiff2[p][3] = F21_stiff2[p][3] + scal6*G_dual[alpha][beta]*fem->dpsi[i][p][alpha];
+
+                    F22_stiff2[p][2] = F22_stiff2[p][2] + scal7*G_dual[alpha][beta]*fem->dpsi[i][p][alpha];
+                    F22_stiff2[p][3] = F22_stiff2[p][3] + scal8*G_dual[alpha][beta]*fem->dpsi[i][p][alpha];
+                }
+
+                 // term 3
+                for (int p=0; p<fem->node_per_el; p++){
+
+                    F11_stiff3[p][0] = F11_stiff3[p][0] + scal9*G_dual[alpha][beta]*fem->dpsi[i][p][beta];
+                    F11_stiff3[p][1] = F11_stiff3[p][1] + scal11*G_dual[alpha][beta]*fem->dpsi[i][p][beta];
+
+                    F12_stiff3[p][0] = F12_stiff3[p][0] + scal10*G_dual[alpha][beta]*fem->dpsi[i][p][beta];
+                    F12_stiff3[p][1] = F12_stiff3[p][1] + scal12*G_dual[alpha][beta]*fem->dpsi[i][p][beta];
+
+                    F21_stiff3[p][2] = F21_stiff3[p][2] + scal9*G_dual[alpha][beta]*fem->dpsi[i][p][beta];
+                    F21_stiff3[p][3] = F21_stiff3[p][3] + scal11*G_dual[alpha][beta]*fem->dpsi[i][p][beta];
+
+                    F22_stiff3[p][2] = F22_stiff3[p][2] + scal10*G_dual[alpha][beta]*fem->dpsi[i][p][beta];
+                    F22_stiff3[p][3] = F22_stiff3[p][3] + scal12*G_dual[alpha][beta]*fem->dpsi[i][p][beta];
+                }
             }
         }
 
@@ -720,10 +870,10 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                                                                         (fem->dpsi[i][q][0]*dd_mu2_FF[0][1] + 
                                                                         fem->dpsi[i][q][1]*dd_mu2_FF[1][1])) +
                                                                         
-                                                                        fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] +
+                                                                    PEN*(fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] +
                                                                         fem->dpsi[i][p][1]*fem->dpsi[i][q][0]*G_dual[0][1] +
                                                                         fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
-                                                                        fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1];
+                                                                        fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1]);
                                                                         
                 K[p*this->dof_per_node][q*this->dof_per_node+1] = beta_1_gp*(fem->dpsi[i][p][0]*
                                                                         (fem->dpsi[i][q][0]*dd_mu1_FF[2][0]
@@ -779,10 +929,10 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                                                                         (fem->dpsi[i][q][0]*dd_mu2_FF[2][3] + 
                                                                         fem->dpsi[i][q][1]*dd_mu2_FF[3][3])) +
                                                                         
-                                                                        fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] +
+                                                                    PEN*(fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] +
                                                                         fem->dpsi[i][p][1]*fem->dpsi[i][q][0]*G_dual[0][1] +
                                                                         fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
-                                                                        fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1];
+                                                                        fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1]);
 
                 K[p*this->dof_per_node+1][q*this->dof_per_node+2] = 0.0;
                 K[p*this->dof_per_node+1][q*this->dof_per_node+3] = 0.0;
@@ -805,7 +955,9 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                 K[p*this->dof_per_node+2][q*this->dof_per_node+1] = 0.0;
 
                 K[p*this->dof_per_node+2][q*this->dof_per_node+2] = PEN*fem->psi[i][p]*(fem->psi[i][q]*G_dual[0][0]) + 
-                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F11_stiff[0] + 
+                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F11_stiff1[0] +
+                                                                        EPS*fem->psi[i][p]*F11_stiff2[q][0] +  
+                                                                        EPS*fem->psi[i][q]*F11_stiff3[p][0] + 
                                                                         EPS*G_dual[0][0]*
                                                                     (fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] + 
                                                                      fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
@@ -813,7 +965,9 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                                                                      fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1]);
 
                 K[p*this->dof_per_node+2][q*this->dof_per_node+3] = PEN*fem->psi[i][p]*(fem->psi[i][q]*G_dual[1][0]) +
-                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F11_stiff[1] +
+                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F11_stiff1[1] +
+                                                                        EPS*fem->psi[i][p]*F11_stiff2[q][1] + 
+                                                                        EPS*fem->psi[i][q]*F11_stiff3[p][1] + 
                                                                         EPS*G_dual[1][0]*
                                                                     (fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] + 
                                                                      fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
@@ -832,7 +986,9 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                 K[p*this->dof_per_node+3][q*this->dof_per_node+1] = 0.0;
 
                 K[p*this->dof_per_node+3][q*this->dof_per_node+2] = PEN*fem->psi[i][p]*(fem->psi[i][q]*G_dual[0][1]) + 
-                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F12_stiff[0] + 
+                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F12_stiff1[0] +
+                                                                        EPS*fem->psi[i][p]*F12_stiff2[q][0] + 
+                                                                        EPS*fem->psi[i][q]*F12_stiff3[q][0] +  
                                                                          EPS*G_dual[0][1]*
                                                                     (fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] + 
                                                                      fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
@@ -840,7 +996,9 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                                                                      fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1]);
 
                 K[p*this->dof_per_node+3][q*this->dof_per_node+3] = PEN*fem->psi[i][p]*(fem->psi[i][q]*G_dual[1][1]) + 
-                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F12_stiff[1] + 
+                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F12_stiff1[1] + 
+                                                                        EPS*fem->psi[i][p]*F12_stiff2[q][1] +
+                                                                        EPS*fem->psi[i][q]*F12_stiff3[q][1] + 
                                                                          EPS*G_dual[1][1]*
                                                                     (fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] + 
                                                                      fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
@@ -859,7 +1017,9 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                 K[p*this->dof_per_node+4][q*this->dof_per_node+2] = 0.0;
                 K[p*this->dof_per_node+4][q*this->dof_per_node+3] = 0.0;
                 K[p*this->dof_per_node+4][q*this->dof_per_node+4] = PEN*fem->psi[i][p]*(fem->psi[i][q]*G_dual[0][0]) +
-                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F21_stiff[2] +
+                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F21_stiff1[2] +
+                                                                        EPS*fem->psi[i][p]*F21_stiff2[q][2] + 
+                                                                        EPS*fem->psi[i][q]*F21_stiff3[p][2] + 
                                                                          EPS*G_dual[0][0]*
                                                                     (fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] + 
                                                                      fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
@@ -867,7 +1027,9 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                                                                      fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1]);
 
                 K[p*this->dof_per_node+4][q*this->dof_per_node+5] = PEN*fem->psi[i][p]*(fem->psi[i][q]*G_dual[1][0]) + 
-                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F21_stiff[3] + 
+                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F21_stiff1[3] + 
+                                                                        EPS*fem->psi[i][p]*F21_stiff2[q][3] + 
+                                                                        EPS*fem->psi[i][q]*F21_stiff3[p][3] + 
                                                                          EPS*G_dual[1][0]*
                                                                     (fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] + 
                                                                      fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
@@ -884,7 +1046,9 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                 K[p*this->dof_per_node+5][q*this->dof_per_node+2] = 0.0;
                 K[p*this->dof_per_node+5][q*this->dof_per_node+3] = 0.0;
                 K[p*this->dof_per_node+5][q*this->dof_per_node+4] = PEN*fem->psi[i][p]*(fem->psi[i][q]*G_dual[0][1]) + 
-                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F22_stiff[2] +
+                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F22_stiff1[2] +
+                                                                        EPS*fem->psi[i][p]*F22_stiff2[q][2] +
+                                                                        EPS*fem->psi[i][q]*F22_stiff3[p][2] +  
                                                                          EPS*G_dual[0][1]*
                                                                     (fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] + 
                                                                      fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
@@ -892,7 +1056,9 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                                                                      fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1]);
 
                 K[p*this->dof_per_node+5][q*this->dof_per_node+5] = PEN*fem->psi[i][p]*(fem->psi[i][q]*G_dual[1][1]) +
-                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F22_stiff[3] + 
+                                                                        EPS*fem->psi[i][p]*fem->psi[i][q]*F22_stiff1[3] + 
+                                                                        EPS*fem->psi[i][p]*F22_stiff2[q][3] + 
+                                                                        EPS*fem->psi[i][q]*F22_stiff3[p][3] + 
                                                                          EPS*G_dual[1][1]*
                                                                     (fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] + 
                                                                      fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
@@ -946,7 +1112,7 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
                                                dx1_zeta_2*fem->dpsi[i][p][1]*G_dual[1][1]);
             // x_2
             fe[p*this->dof_per_node + 1] = beta_1_gp*(d_mu1_F[2]*fem->dpsi[i][p][0] + d_mu1_F[3]*fem->dpsi[i][p][1]) + 
-                                            beta_2_gp*(d_mu1_F[2]*fem->dpsi[i][p][0] + d_mu1_F[3]*fem->dpsi[i][p][1])
+                                            beta_2_gp*(d_mu2_F[2]*fem->dpsi[i][p][0] + d_mu2_F[3]*fem->dpsi[i][p][1])
 
                                             - PEN*(F[1][0]*(G_dual[0][0]*fem->dpsi[i][p][0] + G_dual[0][1]*fem->dpsi[i][p][1])
                                                 + F[1][1]*(G_dual[1][0]*fem->dpsi[i][p][0] + G_dual[1][1]*fem->dpsi[i][p][1]))
@@ -958,19 +1124,19 @@ PetscErrorCode Primal_Solve::elem_stiff_force_vector_global_newton(MyMat<double>
             // F_11
             fe[p*this->dof_per_node + 2] = PEN*(fem->psi[i][p]*(F[0][0]*G_dual[0][0] + F[0][1]*G_dual[1][0]))
                                             - PEN*(fem->psi[i][p]*(dx1_zeta_1*G_dual[0][0] + dx1_zeta_2*G_dual[1][0]))
-                                            + EPS*(F11_res1[p] + F11_res2[p]);
+                                            + EPS*(F11_res1[p] + F11_res2[p] + F11_res3[p] + F11_res4[p]);
             // F_12
             fe[p*this->dof_per_node + 3] = PEN*(fem->psi[i][p]*(F[0][0]*G_dual[0][1] + F[0][1]*G_dual[1][1]))
                                              - PEN*(fem->psi[i][p]*(dx1_zeta_1*G_dual[0][1] + dx1_zeta_2*G_dual[1][1]))
-                                             + EPS*(F12_res1[p] + F12_res2[p]);
+                                             + EPS*(F12_res1[p] + F12_res2[p] + F12_res3[p] + F12_res4[p]);
             // F_21
             fe[p*this->dof_per_node + 4] = PEN*(fem->psi[i][p]*(F[1][0]*G_dual[0][0] + F[1][1]*G_dual[1][0]))
                                             - PEN*(fem->psi[i][p]*(dx2_zeta_1*G_dual[0][0] + dx2_zeta_2*G_dual[1][0]))
-                                            + EPS*(F21_res1[p] + F21_res2[p]);
+                                            + EPS*(F21_res1[p] + F21_res2[p] + F21_res3[p] + F21_res4[p]);
             // F_22
             fe[p*this->dof_per_node + 5] = PEN*(fem->psi[i][p]*(F[1][0]*G_dual[0][1] + F[1][1]*G_dual[1][1]))
                                             - PEN*(fem->psi[i][p]*(dx2_zeta_1*G_dual[0][1] + dx2_zeta_2*G_dual[1][1]))
-                                            + EPS*(F22_res1[p] + F22_res2[p]);
+                                            + EPS*(F22_res1[p] + F22_res2[p] + F22_res3[p] + F22_res4[p]);
             // beta_1
             fe[p*this->dof_per_node + 6] = fem->psi[i][p]*(mu1 - this->lambda_1*this->lambda_1);
             // beta_2

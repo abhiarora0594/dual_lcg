@@ -266,15 +266,15 @@ PetscErrorCode Grid::mesh_trelis()
 	if (mesh_input == spherical){
 
 		double r = 1.0;
-		double r_0 = -5.0; //-0.95
+		double r_0 = 0.0; //-0.95
 		double R = std::sqrt(r*r + r_0*r_0);
 		double z_c = R + ((r_0-R)*2.0*R*(R-r_0)/((R-r_0)*(R-r_0) + r*r));
 
 		for (int i=0;i<ndof;++i){
 
 			val = (R-r_0)*(R-r_0) + X_ref[i][0]*X_ref[i][0] + X_ref[i][1]*X_ref[i][1];
-			X_ref[i][0] = X_ref[i][0];//2.0*R*(R-r_0)*X_ref[i][0]/val;
-			X_ref[i][1] = X_ref[i][1];//2.0*R*(R-r_0)*X_ref[i][1]/val;
+			X_ref[i][0] = 2.0*R*(R-r_0)*X_ref[i][0]/val;//X_ref[i][0];
+			X_ref[i][1] = 2.0*R*(R-r_0)*X_ref[i][1]/val;//X_ref[i][1];
 			X_ref[i][2] = R + ((r_0-R)*2.0*R*(R-r_0)/val) - z_c;
 		}
 	}
