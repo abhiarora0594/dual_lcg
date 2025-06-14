@@ -17,9 +17,9 @@ Input parameters include:\n\
 #include "lcg_problem.h"  // Include parameters and macros
 #include "grid.cc" // grid class for mesh 
 #include "fem.cc" // fem class for shape fns, derivaties
-#include "primal_solve.cc"
-#include "common_utilities.cc"
 #include "dual_solve.cc"  // main class for gradient flow or Newton raphson of dual variational principle
+#include "common_utilities.cc"
+#include "primal_solve.cc"
 
 
 using namespace std;
@@ -73,12 +73,13 @@ int main(int argc,char **args)
 
 	// dual solve
 	if (algorithm == gradient_flow){
-		ierr = dual_solve->gradient_flow(); CHKERRQ(ierr);	
+		ierr = dual_solve->gradient_flow(); CHKERRQ(ierr);
+		ierr = dual_solve->delete_petsc_objects_gradient_flow();CHKERRQ(ierr);
 	}
 	else if (algorithm == newton_raphson){
 		ierr = dual_solve->global_newton_raphson(); CHKERRQ(ierr);
+		ierr = dual_solve->delete_petsc_objects_newton_raphson(); CHKERRQ(ierr);
 	}
-	
 
 	// delete objects
 	delete dual_solve;

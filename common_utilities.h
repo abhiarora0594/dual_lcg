@@ -1,7 +1,6 @@
 #ifndef COMMON_UTILITIES_H
 #define COMMON_UTILITIES_H
 
-#include "dual_solve.h"
 
 class Dual_Solve;
 class Fem;

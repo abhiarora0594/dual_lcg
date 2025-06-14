@@ -7,11 +7,11 @@
 #define NU 1.5
 #define T_START 0.0
 #define T_FINAL 1.0
-#define TOTAL_STEPS 100
+#define TOTAL_STEPS 5
 #define STEP_NO 0
-#define TOL_GLOBAL 1e-3
+#define TOL_GLOBAL 1e-10
 #define TOL_LOCAL 1e-6
-#define PX 1e5
+#define PX 1e10
 #define PF 1e10
 #define Nprint 1
 #define EPS 1.0
@@ -20,7 +20,10 @@
 #define EPS1 0.0
 #define EPS2 0.0
 #define EPS3 1.0
+#define EPS3_res 1.0
 #define PP 2
+#define ONE_BY_EPS 0.0
+#define PEN_CURL 0.0
 
 enum MESH_INPUT
 {
@@ -55,10 +58,10 @@ enum ALGORITHM
 	newton_raphson
 };
 
-MESH_INPUT mesh_input = spherical;
+MESH_INPUT mesh_input = trelis_mesh;
 PROBLEM_TYPE problem_type = inverse;
-RUN_TYPE run_type = restart_gp;
-ALGORITHM algorithm = newton_raphson;
+RUN_TYPE run_type = initial;
+ALGORITHM algorithm = gradient_flow;
 DUAL_IC dual_ic = zero;
 
 
@@ -70,7 +73,7 @@ using MyVec = std::vector<T>;
 
 
 // Global variables
-PetscInt 		nx=40,ny=20; // elements along x and y
+PetscInt 		nx=50,ny=50; // elements along x and y
 
 PetscReal 		l1=1.0,l2=1.0; // size of the domain
 

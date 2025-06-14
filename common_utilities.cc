@@ -214,9 +214,19 @@ PetscErrorCode Common_Utilities::vtk_write()
 		}
 	}
 	else {
-		for (int i=0;i<grid->ndof;++i){
-			myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->x_def[i][0] << 
-						" " << dual_solve->x_def[i][1] << " " << 0.0 << "\r\n";
+		if (problem_type == inverse)
+		{
+			for (int i=0;i<grid->ndof;++i){
+				myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->x_def[i][0] << 
+							" " << dual_solve->x_def[i][1] << " " << 0.0 << "\r\n";
+			}
+		}
+		else if (problem_type == forward)
+		{
+			for (int i=0;i<grid->ndof;++i){
+				myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->x_def[i][0] << 
+							" " << dual_solve->x_def[i][1] << " " << dual_solve->x_def[i][2] << "\r\n";
+			}
 		}
 	}
 
@@ -231,7 +241,8 @@ PetscErrorCode Common_Utilities::vtk_write()
 	for (int i=0;i<grid->nel;++i){
 		myfile_vtk << el_type << "\r\n";	
 	}
-
+	
+	
 	myfile_vtk << "CELL_DATA " << grid->nel << "\r\n";
 	// myfile_vtk << "SCALARS " << "norm_l2_x " << "double " << 1 << "\r\n";
 	// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
@@ -247,7 +258,7 @@ PetscErrorCode Common_Utilities::vtk_write()
 	// 	myfile_vtk << std::fixed << std::setprecision(10) << norm_global_F[ie] << "\r\n";
 	// }
 
-
+	
 	myfile_vtk << "SCALARS " << "dual_eig1 " << "double " << 1 << "\r\n";
 	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
@@ -276,6 +287,7 @@ PetscErrorCode Common_Utilities::vtk_write()
 		myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->dual_S_quad_H[ie] << "\r\n";
 	}
 
+	
 	myfile_vtk << "SCALARS " << "dual_func_total " << "double " << 1 << "\r\n";
 	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
@@ -297,22 +309,59 @@ PetscErrorCode Common_Utilities::vtk_write()
 		myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->compatibility_check[ie] << "\r\n";
 	}
 
-	myfile_vtk << "FIELD " << "fieldData " << 4 + 6 << "\r\n";
-	myfile_vtk << "x_gp " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
+	// if (dual_solve->step_no == 0)
+	// {
+	// 	myfile_vtk << "FIELD " << "fieldData " << dual_solve->dim << "\r\n";
+	// }
+	// else {
+	// 	myfile_vtk << "FIELD " << "fieldData " << dual_solve->dim  + grid->A_DOF << "\r\n";
+	// }
 
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->x_gp[ie][0][0] << 
-															" " << dual_solve->x_gp[ie][0][1] << "\r\n";
+	// myfile_vtk << "FIELD " << "fieldData " << dual_solve->dim  + grid->A_DOF << "\r\n";
+
+	myfile_vtk << "SCALARS " << "x_gp " << "double " << dual_solve->dim << "\r\n";
+	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
+
+	if (problem_type == inverse)
+	{
+		for (int ie=0;ie<grid->nel;++ie){
+			myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->x_gp[ie][0][0] << 
+																" " << dual_solve->x_gp[ie][0][1] << "\r\n";
+		}
+	}
+	else if (problem_type == forward)
+	{
+		for (int ie=0;ie<grid->nel;++ie){
+			myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->x_gp[ie][0][0] << 
+																" " << dual_solve->x_gp[ie][0][1] << 
+																" " << dual_solve->x_gp[ie][0][2] << "\r\n";
+		}
 	}
 
-	myfile_vtk << "F_gp " << dual_solve->F_DOF << " " << grid->nel << " double" << "\r\n";
+	myfile_vtk << "SCALARS " << "F_gp " << "double " << dual_solve->F_DOF << "\r\n";
+	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-	for (int ie=0;ie<grid->nel;++ie){
-		myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->F_gp[ie][0][0] << " " 
-															<< dual_solve->F_gp[ie][0][1] << " " 
-															<< dual_solve->F_gp[ie][0][2] << " " 
-															<< dual_solve->F_gp[ie][0][3] << "\r\n";
+	if (problem_type == inverse)
+	{
+		for (int ie=0;ie<grid->nel;++ie){
+			myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->F_gp[ie][0][0] << " " 
+																<< dual_solve->F_gp[ie][0][1] << " " 
+																<< dual_solve->F_gp[ie][0][2] << " " 
+																<< dual_solve->F_gp[ie][0][3] << "\r\n";
+		}
 	}
+	else if (problem_type == forward)
+	{
+		for (int ie=0;ie<grid->nel;++ie){
+			myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->F_gp[ie][0][0] << " " 
+																<< dual_solve->F_gp[ie][0][1] << " " 
+																<< dual_solve->F_gp[ie][0][2] << " " 
+																<< dual_solve->F_gp[ie][0][3] << " "
+																<< dual_solve->F_gp[ie][0][4] << " " 
+																<< dual_solve->F_gp[ie][0][5] << "\r\n";
+		}
+	}
+	
 
 	// myfile_vtk << "Eig1_avg " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
 
@@ -351,136 +400,148 @@ PetscErrorCode Common_Utilities::vtk_write()
 	// 	myfile_vtk << std::fixed << std::setprecision(10) << tmp3 << " " << tmp4 << "\r\n";
 	// }
 
-	myfile_vtk << "Eig1_1 " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
+	if (dual_solve->step_no > 0)
+	{
 		
-		tmp1 = dual_solve->Eig_1_gp[ie][0][0];
+		myfile_vtk << "VECTORS " << "Eig1_1 " << "double " << "\r\n";
+		// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-		tmp2 = dual_solve->Eig_1_gp[ie][0][1];
+		for (int ie=0;ie<grid->nel;++ie){
+			
+			tmp1 = dual_solve->Eig_1_gp[ie][0][0];
 
-		mod =  std::sqrt(tmp1*tmp1 + tmp2*tmp2);
+			tmp2 = dual_solve->Eig_1_gp[ie][0][1];
 
-		tmp1 = tmp1/mod;
-		tmp2 = tmp2/mod;
+			mod =  std::sqrt(tmp1*tmp1 + tmp2*tmp2);
 
-		myfile_vtk << std::fixed << std::setprecision(10) << tmp1 << " " << tmp2 << "\r\n";
-	}
+			tmp1 = tmp1/mod;
+			tmp2 = tmp2/mod;
 
-	myfile_vtk << "Eig2_1 " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
+			myfile_vtk << std::fixed << std::setprecision(10) << tmp1 << " " << tmp2 << " " << 0.0 <<  "\r\n";
+		}
 
-	
-	for (int ie=0;ie<grid->nel;++ie){
+		myfile_vtk << "VECTORS " << "Eig2_1 " << "double " << "\r\n";
+		// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-		tmp3 = dual_solve->Eig_2_gp[ie][0][0];
-
-		tmp4 = dual_solve->Eig_2_gp[ie][0][1];
-
-		mod =  std::sqrt(tmp3*tmp3 + tmp4*tmp4);
-
-		tmp3 = tmp3/mod;
-		tmp4 = tmp4/mod;		 
-
-		myfile_vtk << std::fixed << std::setprecision(10) << tmp3 << " " << tmp4 << "\r\n";
-	}
-
-	myfile_vtk << "Eig1_2 " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
-
-	for (int ie=0;ie<grid->nel;++ie){
 		
-		tmp1 = dual_solve->Eig_1_gp[ie][1][0];
+		for (int ie=0;ie<grid->nel;++ie){
 
-		tmp2 = dual_solve->Eig_1_gp[ie][1][1];
+			tmp3 = dual_solve->Eig_2_gp[ie][0][0];
 
-		mod =  std::sqrt(tmp1*tmp1 + tmp2*tmp2);
+			tmp4 = dual_solve->Eig_2_gp[ie][0][1];
 
-		tmp1 = tmp1/mod;
-		tmp2 = tmp2/mod;
+			mod =  std::sqrt(tmp3*tmp3 + tmp4*tmp4);
 
-		myfile_vtk << std::fixed << std::setprecision(10) << tmp1 << " " << tmp2 << "\r\n";
-	}
+			tmp3 = tmp3/mod;
+			tmp4 = tmp4/mod;		 
 
-	myfile_vtk << "Eig2_2 " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
+			myfile_vtk << std::fixed << std::setprecision(10) << tmp3 << " " << tmp4 <<  " " << 0.0 << "\r\n";
+		}
 
-	
-	for (int ie=0;ie<grid->nel;++ie){
+		myfile_vtk << "VECTORS " << "Eig1_2 " << "double " << "\r\n";
+		// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-		tmp3 = dual_solve->Eig_2_gp[ie][1][0];
+		for (int ie=0;ie<grid->nel;++ie){
+			
+			tmp1 = dual_solve->Eig_1_gp[ie][1][0];
 
-		tmp4 = dual_solve->Eig_2_gp[ie][1][1];
+			tmp2 = dual_solve->Eig_1_gp[ie][1][1];
 
-		mod =  std::sqrt(tmp3*tmp3 + tmp4*tmp4);
+			mod =  std::sqrt(tmp1*tmp1 + tmp2*tmp2);
 
-		tmp3 = tmp3/mod;
-		tmp4 = tmp4/mod;		 
+			tmp1 = tmp1/mod;
+			tmp2 = tmp2/mod;
 
-		myfile_vtk << std::fixed << std::setprecision(10) << tmp3 << " " << tmp4 << "\r\n";
-	}
+			myfile_vtk << std::fixed << std::setprecision(10) << tmp1 << " " << tmp2 << " " << 0.0 <<  "\r\n";
+		}
 
-	myfile_vtk << "Eig1_3 " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
+		myfile_vtk << "VECTORS " << "Eig2_2 " << "double " << "\r\n";
+		// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-	for (int ie=0;ie<grid->nel;++ie){
 		
-		tmp1 = dual_solve->Eig_1_gp[ie][2][0];
+		for (int ie=0;ie<grid->nel;++ie){
 
-		tmp2 = dual_solve->Eig_1_gp[ie][2][1];
+			tmp3 = dual_solve->Eig_2_gp[ie][1][0];
 
-		mod =  std::sqrt(tmp1*tmp1 + tmp2*tmp2);
+			tmp4 = dual_solve->Eig_2_gp[ie][1][1];
 
-		tmp1 = tmp1/mod;
-		tmp2 = tmp2/mod;
+			mod =  std::sqrt(tmp3*tmp3 + tmp4*tmp4);
 
-		myfile_vtk << std::fixed << std::setprecision(10) << tmp1 << " " << tmp2 << "\r\n";
-	}
+			tmp3 = tmp3/mod;
+			tmp4 = tmp4/mod;		 
 
-	myfile_vtk << "Eig2_3 " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
+			myfile_vtk << std::fixed << std::setprecision(10) << tmp3 << " " << tmp4 << " " << 0.0 << "\r\n";
+		}
 
-	
-	for (int ie=0;ie<grid->nel;++ie){
+		myfile_vtk << "VECTORS " << "Eig1_3 " << "double " << "\r\n";
+		// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-		tmp3 = dual_solve->Eig_2_gp[ie][2][0];
+		for (int ie=0;ie<grid->nel;++ie){
+			
+			tmp1 = dual_solve->Eig_1_gp[ie][2][0];
 
-		tmp4 = dual_solve->Eig_2_gp[ie][2][1];
+			tmp2 = dual_solve->Eig_1_gp[ie][2][1];
 
-		mod =  std::sqrt(tmp3*tmp3 + tmp4*tmp4);
+			mod =  std::sqrt(tmp1*tmp1 + tmp2*tmp2);
 
-		tmp3 = tmp3/mod;
-		tmp4 = tmp4/mod;		 
+			tmp1 = tmp1/mod;
+			tmp2 = tmp2/mod;
 
-		myfile_vtk << std::fixed << std::setprecision(10) << tmp3 << " " << tmp4 << "\r\n";
-	}
+			myfile_vtk << std::fixed << std::setprecision(10) << tmp1 << " " << tmp2 << " " << 0.0 << "\r\n";
+		}
 
-	myfile_vtk << "Eig1_4 " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
+		myfile_vtk << "VECTORS " << "Eig2_1 " << "double " << "\r\n";
+		// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-	for (int ie=0;ie<grid->nel;++ie){
 		
-		tmp1 = dual_solve->Eig_1_gp[ie][3][0];
+		for (int ie=0;ie<grid->nel;++ie){
 
-		tmp2 = dual_solve->Eig_1_gp[ie][3][1];
+			tmp3 = dual_solve->Eig_2_gp[ie][2][0];
 
-		mod =  std::sqrt(tmp1*tmp1 + tmp2*tmp2);
+			tmp4 = dual_solve->Eig_2_gp[ie][2][1];
 
-		tmp1 = tmp1/mod;
-		tmp2 = tmp2/mod;
+			mod =  std::sqrt(tmp3*tmp3 + tmp4*tmp4);
 
-		myfile_vtk << std::fixed << std::setprecision(10) << tmp1 << " " << tmp2 << "\r\n";
-	}
+			tmp3 = tmp3/mod;
+			tmp4 = tmp4/mod;		 
 
-	myfile_vtk << "Eig2_4 " << dual_solve->dim << " " << grid->nel << " double" << "\r\n";
+			myfile_vtk << std::fixed << std::setprecision(10) << tmp3 << " " << tmp4 << " " << 0.0 << "\r\n";
+		}
 
-	
-	for (int ie=0;ie<grid->nel;++ie){
+		myfile_vtk << "VECTORS " << "Eig1_4 " << "double " << "\r\n";
+		// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-		tmp3 = dual_solve->Eig_2_gp[ie][3][0];
+		for (int ie=0;ie<grid->nel;++ie){
+			
+			tmp1 = dual_solve->Eig_1_gp[ie][3][0];
 
-		tmp4 = dual_solve->Eig_2_gp[ie][3][1];
+			tmp2 = dual_solve->Eig_1_gp[ie][3][1];
 
-		mod =  std::sqrt(tmp3*tmp3 + tmp4*tmp4);
+			mod =  std::sqrt(tmp1*tmp1 + tmp2*tmp2);
 
-		tmp3 = tmp3/mod;
-		tmp4 = tmp4/mod;		 
+			tmp1 = tmp1/mod;
+			tmp2 = tmp2/mod;
 
-		myfile_vtk << std::fixed << std::setprecision(10) << tmp3 << " " << tmp4 << "\r\n";
+			myfile_vtk << std::fixed << std::setprecision(10) << tmp1 << " " << tmp2 << " " << 0.0 << "\r\n";
+		}
+
+		myfile_vtk << "VECTORS " << "Eig2_4 " << "double " << "\r\n";
+		// myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
+
+		
+		for (int ie=0;ie<grid->nel;++ie){
+
+			tmp3 = dual_solve->Eig_2_gp[ie][3][0];
+
+			tmp4 = dual_solve->Eig_2_gp[ie][3][1];
+
+			mod =  std::sqrt(tmp3*tmp3 + tmp4*tmp4);
+
+			tmp3 = tmp3/mod;
+			tmp4 = tmp4/mod;		 
+
+			myfile_vtk << std::fixed << std::setprecision(10) << tmp3 << " " << tmp4 << " " << 0.0 << "\r\n";
+		}
 	}
 
 	myfile_vtk << "POINT_DATA " << grid->ndof << "\r\n";
@@ -495,11 +556,25 @@ PetscErrorCode Common_Utilities::vtk_write()
 	myfile_vtk << "SCALARS " << "A_dual " << "double " << grid->A_DOF << "\r\n";
 	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-	for (int i=0;i<grid->ndof;++i){
-		myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->A_dual[i][0] << " " 
-															<< dual_solve->A_dual[i][1] << " " 
-															<< dual_solve->A_dual[i][2] << " " 
-															<< dual_solve->A_dual[i][3] << "\r\n";
+	if (problem_type == inverse)
+	{
+		for (int i=0;i<grid->ndof;++i){
+			myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->A_dual[i][0] << " " 
+																<< dual_solve->A_dual[i][1] << " " 
+																<< dual_solve->A_dual[i][2] << " " 
+																<< dual_solve->A_dual[i][3] << "\r\n";
+		}
+	}
+	else if (problem_type == forward)
+	{
+		for (int i=0;i<grid->ndof;++i){
+			myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->A_dual[i][0] << " " 
+																<< dual_solve->A_dual[i][1] << " " 
+																<< dual_solve->A_dual[i][2] << " " 
+																<< dual_solve->A_dual[i][3] << " "
+																<< dual_solve->A_dual[i][4] << " "
+																<< dual_solve->A_dual[i][5] << "\r\n";
+		}
 	}
 
 	myfile_vtk << "SCALARS " << "beta_rhs " << "double " << 2 << "\r\n";
@@ -507,18 +582,33 @@ PetscErrorCode Common_Utilities::vtk_write()
 
 	for (int i=0;i<grid->ndof;++i){
 		myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->beta_rhs[i][0] << " " 
-															<< dual_solve->beta_rhs[i][1] << " " << "\r\n";
+															<< dual_solve->beta_rhs[i][1] << "\r\n";
 	}
 
 	myfile_vtk << "SCALARS " << "A_dual_rhs " << "double " << grid->A_DOF << "\r\n";
 	myfile_vtk << "LOOKUP_TABLE " << "default" << "\r\n";
 
-	for (int i=0;i<grid->ndof;++i){
-		myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->A_dual_rhs[i][0] << " " 
-															<< dual_solve->A_dual_rhs[i][1] << " " 
-															<< dual_solve->A_dual_rhs[i][2] << " " 
-															<< dual_solve->A_dual_rhs[i][3] << "\r\n";
+	if (problem_type == inverse)
+	{
+		for (int i=0;i<grid->ndof;++i){
+			myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->A_dual_rhs[i][0] << " " 
+																<< dual_solve->A_dual_rhs[i][1] << " " 
+																<< dual_solve->A_dual_rhs[i][2] << " " 
+																<< dual_solve->A_dual_rhs[i][3] << "\r\n";
+		}
 	}
+	else if (problem_type == forward)
+	{
+		for (int i=0;i<grid->ndof;++i){
+			myfile_vtk << std::fixed << std::setprecision(10) << dual_solve->A_dual_rhs[i][0] << " " 
+																<< dual_solve->A_dual_rhs[i][1] << " " 
+																<< dual_solve->A_dual_rhs[i][2] << " " 
+																<< dual_solve->A_dual_rhs[i][3] << " "
+																<< dual_solve->A_dual_rhs[i][4] << " "
+																<< dual_solve->A_dual_rhs[i][5] << "\r\n";
+		}
+	}
+	
 
 	myfile_vtk.close();
 
@@ -535,34 +625,57 @@ PetscErrorCode Common_Utilities::restart_write()
 
 	myfile1.open(filename1, std::ios::out);
 
-	for (int ie=0;ie<grid->nel;++ie){
-		
-		for (int gp=0;gp<fem->ngp;gp++){
-			
-			myfile1 << std::fixed << std::setprecision(10) << dual_solve->x_gp[ie][gp][0] << " " 
-															<< dual_solve->x_gp[ie][gp][1] << "\r\n";
+	if (problem_type == inverse)
+	{
+		for (int ie=0;ie<grid->nel;++ie){
+			for (int gp=0;gp<fem->ngp;gp++){
+				myfile1 << std::fixed << std::setprecision(10) << dual_solve->x_gp[ie][gp][0] << " " 
+																<< dual_solve->x_gp[ie][gp][1] << "\r\n";
+			}
 		}
-
+	}
+	else if (problem_type == forward)
+	{
+		for (int ie=0;ie<grid->nel;++ie){
+			for (int gp=0;gp<fem->ngp;gp++){
+				myfile1 << std::fixed << std::setprecision(10) << dual_solve->x_gp[ie][gp][0] << " " 
+																<< dual_solve->x_gp[ie][gp][1] << " " 
+																<< dual_solve->x_gp[ie][gp][2] << "\r\n";
+			}
+		}
 	}
 
 	myfile1.close();
-
 
 	std::string filename2 = "./restart/restart_F_gp_" + std::to_string(dual_solve->step_no) + ".txt";
 
 	myfile2.open(filename2, std::ios::out);
 
-	for (int ie=0;ie<grid->nel;++ie){
-
-		for (int gp=0;gp<fem->ngp;gp++){
-
-			myfile2 << std::fixed << std::setprecision(10) << dual_solve->F_gp[ie][gp][0] << " " 
-															<< dual_solve->F_gp[ie][gp][1] << " " 
-															<< dual_solve->F_gp[ie][gp][2] << " " 
-															<< dual_solve->F_gp[ie][gp][3] << "\r\n";	
+	if (problem_type == inverse)
+	{
+		for (int ie=0;ie<grid->nel;++ie){
+			for (int gp=0;gp<fem->ngp;gp++){
+				myfile2 << std::fixed << std::setprecision(10) << dual_solve->F_gp[ie][gp][0] << " " 
+																<< dual_solve->F_gp[ie][gp][1] << " " 
+																<< dual_solve->F_gp[ie][gp][2] << " " 
+																<< dual_solve->F_gp[ie][gp][3] << "\r\n";	
+			}
 		}
 	}
-
+	else if (problem_type == forward)
+	{
+		for (int ie=0;ie<grid->nel;++ie){
+			for (int gp=0;gp<fem->ngp;gp++){
+				myfile2 << std::fixed << std::setprecision(10) << dual_solve->F_gp[ie][gp][0] << " " 
+																<< dual_solve->F_gp[ie][gp][1] << " " 
+																<< dual_solve->F_gp[ie][gp][2] << " " 
+																<< dual_solve->F_gp[ie][gp][3] << " " 
+																<< dual_solve->F_gp[ie][gp][4] << " " 
+																<< dual_solve->F_gp[ie][gp][5] << "\r\n";	
+			}
+		}
+	}
+	
 	myfile2.close();
 
 
@@ -579,11 +692,22 @@ PetscErrorCode Common_Utilities::restart_write()
 
 	myfile4.open(filename4, std::ios::out);
 
-	for (int i=0;i<grid->ndof;++i){
-			
-		myfile4 << std::fixed << std::setprecision(10) << dual_solve->x_def[i][0] << " " 
-														<< dual_solve->x_def[i][1] << "\r\n";
+	if (problem_type == inverse)
+	{
+		for (int i=0;i<grid->ndof;++i){		
+			myfile4 << std::fixed << std::setprecision(10) << dual_solve->x_def[i][0] << " " 
+															<< dual_solve->x_def[i][1] << "\r\n";
 
+		}
+	}
+	else if (problem_type == forward)
+	{
+		for (int i=0;i<grid->ndof;++i){		
+			myfile4 << std::fixed << std::setprecision(10) << dual_solve->x_def[i][0] << " " 
+															<< dual_solve->x_def[i][1] << " "
+															<< dual_solve->x_def[i][2] << "\r\n";
+
+		}
 	}
 
 	myfile4.close();
@@ -592,15 +716,29 @@ PetscErrorCode Common_Utilities::restart_write()
 
 	myfile5.open(filename5, std::ios::out);
 
-	for (int i=0;i<grid->ndof;++i){
-			
-		myfile5 << std::fixed << std::setprecision(10) << dual_solve->beta[i][0] << " " 
-														<< dual_solve->beta[i][1] << " "
-														<< dual_solve->A_dual[i][0] << " "
-														<< dual_solve->A_dual[i][1] << " "
-														<< dual_solve->A_dual[i][2] << " "
-														<< dual_solve->A_dual[i][3] << "\r\n";
-
+	if (problem_type == inverse)
+	{
+		for (int i=0;i<grid->ndof;++i){	
+			myfile5 << std::fixed << std::setprecision(10) << dual_solve->beta[i][0] << " " 
+															<< dual_solve->beta[i][1] << " "
+															<< dual_solve->A_dual[i][0] << " "
+															<< dual_solve->A_dual[i][1] << " "
+															<< dual_solve->A_dual[i][2] << " "
+															<< dual_solve->A_dual[i][3] << "\r\n";
+		}
+	}
+	else if (problem_type == forward)
+	{
+		for (int i=0;i<grid->ndof;++i){	
+			myfile5 << std::fixed << std::setprecision(10) << dual_solve->beta[i][0] << " " 
+															<< dual_solve->beta[i][1] << " "
+															<< dual_solve->A_dual[i][0] << " "
+															<< dual_solve->A_dual[i][1] << " "
+															<< dual_solve->A_dual[i][2] << " "
+															<< dual_solve->A_dual[i][3] << " " 
+															<< dual_solve->A_dual[i][4] << " "
+															<< dual_solve->A_dual[i][5] << "\r\n";
+		}
 	}
 
 	myfile5.close();

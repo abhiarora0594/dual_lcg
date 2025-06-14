@@ -1,5 +1,4 @@
 #include "primal_solve.h"
-#include "common_utilities.h"
 
 Primal_Solve::Primal_Solve(Fem *fem, Grid *grid, Dual_Solve *dual_solve)
 {	

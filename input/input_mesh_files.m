@@ -2,10 +2,10 @@ clc
 % close all
 clear all
 
-aa = load('./Circular_shell2/nodes.txt');
-b = load('./Circular_shell2/connectivity.txt');
-Boundary_nodes=load('./Circular_shell2/boundary.txt');
-% initial_guess = load('./hat_shape/initial_guess.txt');
+aa = load('./hat_shape/nodes.txt');
+b = load('./hat_shape/connectivity.txt');
+Boundary_nodes=load('./hat_shape/boundary.txt');
+initial_guess = load('./hat_shape/initial_guess.txt');
 
 [m,n] = size(Boundary_nodes);
 
@@ -16,10 +16,10 @@ ind = find(Boundary_nodes==0);
 Boundary_nodes(ind) = [];
 
 [m,n] = size(aa);
-a = zeros(m,n+1);
+a = zeros(m,n);
 a(:,1:2) = aa(:,1:2); % 1 node no 2 x-coord
-a(:,3) = aa(:,3); % 3 is y-coord but in abaqus it was z
-a(:,4) = zeros(m,1); % 4 is z-coord but in abaqus it was y
+a(:,3) = aa(:,4); % 3 is y-coord but in abaqus it was z
+a(:,4) = aa(:,3); % 4 is z-coord but in abaqus it was y
 
 maxx = max(a(:,1));
 
@@ -88,7 +88,7 @@ fileID1= fopen('coordinates.in','w');
 fileID2= fopen('element_connectivity.in','w');
 fileID3= fopen('boundary_elems.in','w');
 fileID4= fopen('mesh_info.in','w');
-% fileID5=fopen('initial_guess.in','w');
+fileID5=fopen('initial_guess.in','w');
 
 for i=1:size(a,1)
     fprintf(fileID1,'%12.16f %12.16f %12.16f\r\n',a(i,2),a(i,3),a(i,4)); 
@@ -104,9 +104,9 @@ end
 
 fprintf(fileID4,'%12d %12d %12d\r\n',size(a,1),size(b,1),size(Boundary_elems,1));
 
-% for i=1:size(a,1)
-%     fprintf(fileID5,'%12.16f %12.16f\r\n',initial_guess(i,1),initial_guess(i,2)); 
-% end
+for i=1:size(a,1)
+    fprintf(fileID5,'%12.16f %12.16f\r\n',initial_guess(i,1),initial_guess(i,2)); 
+end
     
 % figure;
 % for i=1:100%size(b,1)
@@ -122,6 +122,6 @@ fclose(fileID1);
 fclose(fileID2);
 fclose(fileID3);
 fclose(fileID4);
-% fclose(fileID5);
+fclose(fileID5);
 
 

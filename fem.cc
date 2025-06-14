@@ -102,16 +102,16 @@ void Fem::local_sf_der_linear()
 	// derivatives of shape funcs at the center
 	for (int i=0;i<ngp;i++){
 
-		dpsi_c[0][0]= -0.25*sqrt_three;
-		dpsi_c[1][0]= 0.25*sqrt_three;
-		dpsi_c[2][0]= 0.25*sqrt_three;
-		dpsi_c[3][0]= -0.25*sqrt_three;
+		dpsi_c[0][0]= -0.25*(1.0/sqrt_three);
+		dpsi_c[1][0]= 0.25*(1.0/sqrt_three);
+		dpsi_c[2][0]= 0.25*(1.0/sqrt_three);
+		dpsi_c[3][0]= -0.25*(1.0/sqrt_three);
 
 
-		dpsi_c[0][1]= -0.25*sqrt_three;
-		dpsi_c[1][1]= -0.25*sqrt_three;
-		dpsi_c[2][1]= 0.25*sqrt_three;
-		dpsi_c[3][1]= 0.25*sqrt_three;
+		dpsi_c[0][1]= -0.25*(1.0/sqrt_three);
+		dpsi_c[1][1]= -0.25*(1.0/sqrt_three);
+		dpsi_c[2][1]= 0.25*(1.0/sqrt_three);
+		dpsi_c[3][1]= 0.25*(1.0/sqrt_three);
 	}
 
 

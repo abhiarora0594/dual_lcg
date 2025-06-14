@@ -261,16 +261,27 @@ public:
 													MyVec <double> &, MyVec <double> &,
 													MyVec <double> &, MyVec <double> &,
 													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
+													MyVec <double> &, MyVec <double> &,
 													MyVec <double> &, MyVec <double> &);
 	
 	PetscErrorCode regularisation_stiffness_terms_calculation(int , MyMat <double> , MyMat <double> ,
 															MyMat <double> , MyMat <double> ,
 															MyVec <double> &, MyVec <double> &,
 															MyVec <double> &, MyVec <double> &,
+															MyVec <double> &, MyVec <double> &,
+															MyMat <double> &, MyMat <double> &,
+															MyMat <double> &, MyMat <double> &,
 															MyMat <double> &, MyMat <double> &,
 															MyMat <double> &, MyMat <double> &,
 															MyMat <double> &, MyMat <double> &,
 															MyMat <double> &, MyMat <double> &);
+
+	PetscErrorCode get_derivatives_of_G_with_zeta(int , MyMat <double> ,
+													MyMat <double> , MyMat <double> ,
+													double *, double *, double *, double *);															
 
 	// helper methods 
 	PetscErrorCode get_derivative_of_mus(MyMat <double>, double, double,
@@ -328,6 +339,10 @@ public:
 	inline PetscErrorCode eigenvectors_on_target_shape(MyVec <double> , MyVec <double> , 
 														MyMat <double> , MyMat <double> ,
 														MyVec <double> & , MyVec <double> &);
+	
+	inline PetscErrorCode eigenvectors_on_reference_shape(MyVec <double> , MyVec <double> ,
+															MyMat <double> ,int ,
+															MyVec <double> &, MyVec <double> &);
 
 	// initial condition methods
 
@@ -387,7 +402,8 @@ public:
 	PetscErrorCode area_calculation();
 	
 	// petsc methods
-	PetscErrorCode delete_petsc_objects();
+	PetscErrorCode delete_petsc_objects_newton_raphson();
+	PetscErrorCode delete_petsc_objects_gradient_flow();
 
 	PetscErrorCode copying_petsc_dual_vector_to_stdvector();
 

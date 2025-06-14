@@ -1,7 +1,6 @@
 #ifndef PRIMAL_SOLVE_H
 #define PRIMAL_SOLVE_H
 
-#include "dual_solve.h"
 
 class Dual_Solve;
 class Fem;

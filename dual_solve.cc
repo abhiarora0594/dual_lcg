@@ -1,4 +1,7 @@
 #include "dual_solve.h"
+#include "common_utilities.h"
+#include "primal_solve.h"
+
 
 Dual_Solve::Dual_Solve(Fem *fem, Grid *grid, double lambda, double nu, \
 						double t_start, double t_final, int total_steps, \
@@ -22,8 +25,8 @@ Dual_Solve::Dual_Solve(Fem *fem, Grid *grid, double lambda, double nu, \
 	}
 	else if (problem_type == forward){
 		this->dim = 3;
-		this->lambda_1 = lambda;
-		this->lambda_2 = std::pow(lambda,-nu);
+		this->lambda_1 = std::sqrt(2.0); //lambda;
+		this->lambda_2 = 1.0; // std::pow(lambda,-nu);
 	}
 
 	this->F_DOF = 2*this->dim;
@@ -33,6 +36,8 @@ Dual_Solve::Dual_Solve(Fem *fem, Grid *grid, double lambda, double nu, \
   	this->Iend = Istart + grid->nel/(::size) + ((grid->nel%(::size)) > (::rank));
 
   	std::cout << " lambda_1 is " << this->lambda_1 << " and lambda_2 is " << this->lambda_2 << std::endl;
+
+  	std::cout << " dim is " << this->dim << std::endl;
 
   	this->t_start = t_start;
 
@@ -104,7 +109,6 @@ Dual_Solve::Dual_Solve(Fem *fem, Grid *grid, double lambda, double nu, \
 	// L2 norm F
 	norm_global_F = MyVec <double> (grid->nel);
 
-
 	dual_S_mu1 = MyVec <double> (grid->nel);
 
 	dual_S_mu2 = MyVec <double> (grid->nel);
@@ -175,12 +179,9 @@ Dual_Solve::Dual_Solve(Fem *fem, Grid *grid, double lambda, double nu, \
 
 Dual_Solve::~Dual_Solve()
 {
-	// deleting objects
-	VecDestroy(&rhs_vec);
-	VecDestroy(&dual_vec);
-	VecDestroy(&mass_vec);
-	VecDestroy(&rhs_vec_final);
-	VecDestroy(&delta_dual_vec);
+
+	// deleting variables and classes
+	// petsc objects deleted separetely in a function
 
 	delete[] ind_set_z;
 
@@ -189,34 +190,6 @@ Dual_Solve::~Dual_Solve()
 	delete[] ind_set_xi;
 
 	delete[] xi_dual;
-
-	VecScatterDestroy(&ctx_dual); 
-
-	VecDestroy(&dual_vec_SEQ);
-
-	MatDestroy(&K_xdef);
-
-	MatDestroy(&K_dual);	
-
-	MatDestroy(&Ke_local);
-
-	VecDestroy(&F_xdef); 
-
-	VecDestroy(&xdef_vec);
-
-	VecDestroy(&Fe_local);
-
-	VecDestroy(&local_vec);
-
-	KSPDestroy(&ksp_xdef); 
-
-	KSPDestroy(&ksp_dual);
-
-	KSPDestroy(&ksp_local);
-
-	VecScatterDestroy(&ctx_xdef); 
-
-	VecDestroy(&xdef_vec_SEQ);
 
 	for (int i=0; i<grid->ndof; i++)
 		delete[] x_def[i];
@@ -241,7 +214,7 @@ PetscErrorCode Dual_Solve::contruct_primal_solve_class()
 
 PetscErrorCode Dual_Solve::contruct_common_utilities_class()
 {
-	// constructing primal solve class
+	// constructing common_utilities class
 	this->common_utilities = new Common_Utilities(this->fem,this->grid,this);
 
 	return 0;
@@ -304,7 +277,8 @@ PetscErrorCode Dual_Solve::gradient_flow()
 
 	std::cout << "xdef_dof is " << xdef_dof << std::endl;
 
-	ierr = common_utilities->mat_create_petsc(K_xdef,xdef_dof,30,25); CHKERRQ(ierr);
+	// ierr = common_utilities->mat_create_petsc(K_xdef,xdef_dof,30,25); CHKERRQ(ierr);
+	ierr = common_utilities->mat_create_petsc(K_xdef,xdef_dof,40,35); CHKERRQ(ierr);
 	ierr = common_utilities->vec_create_petsc(F_xdef,xdef_dof); CHKERRQ(ierr);
 	ierr = common_utilities->vec_create_petsc(xdef_vec,xdef_dof); CHKERRQ(ierr);
 
@@ -319,7 +293,7 @@ PetscErrorCode Dual_Solve::gradient_flow()
 		ierr = this->initial_condition_before_primal_solve(); CHKERRQ(ierr);
 
 		if (run_type == initial){
-			ierr = primal_solve->global_newton_raphson_primal(); CHKERRQ(ierr);
+			// ierr = primal_solve->global_newton_raphson_primal(); CHKERRQ(ierr);
 		}
 
 		ierr = this->initial_condition_after_primal_solve(); CHKERRQ(ierr);
@@ -334,7 +308,7 @@ PetscErrorCode Dual_Solve::gradient_flow()
 
 		residual_conv = 1.0;
 	
-		while (t_step < t_final || residual_conv > tol_global || step_no < total_steps)
+		while ((t_step < t_final || residual_conv > tol_global) && step_no < total_steps)
 		{
 
 			if ( count == 0  || step_no == 10 || step_no%Nprint==0){
@@ -352,7 +326,7 @@ PetscErrorCode Dual_Solve::gradient_flow()
 
 			ierr = this->get_dual_l2_norm(); CHKERRQ(ierr);
 
-			qf_global = std::sqrt(qf_global)/undef_global;
+			qf_global = std::sqrt(qf_global/undef_global);
 
 			ierr = common_utilities->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
 
@@ -455,7 +429,7 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 	ierr = common_utilities->vec_create_petsc(rhs_vec,grid->tdof); CHKERRQ(ierr);
 	ierr = common_utilities->vec_create_petsc(dual_vec,grid->tdof); CHKERRQ(ierr);
 	ierr = common_utilities->vec_create_petsc(delta_dual_vec,grid->tdof); CHKERRQ(ierr);
-	ierr = common_utilities->mat_create_petsc(K_dual,grid->tdof,100,100); CHKERRQ(ierr);
+	ierr = common_utilities->mat_create_petsc(K_dual,grid->tdof,150,150); CHKERRQ(ierr);
 	ierr = VecSet(rhs_vec,0.0); CHKERRQ(ierr);
 	ierr = VecSet(delta_dual_vec,0.0); CHKERRQ(ierr);
 
@@ -470,7 +444,7 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 
 	std::cout << "xdef_dof is " << xdef_dof << std::endl;
 
-	ierr = common_utilities->mat_create_petsc(K_xdef,xdef_dof,30,25); CHKERRQ(ierr);
+	ierr = common_utilities->mat_create_petsc(K_xdef,xdef_dof,40,35); CHKERRQ(ierr);
 	ierr = common_utilities->vec_create_petsc(F_xdef,xdef_dof); CHKERRQ(ierr);
 	ierr = common_utilities->vec_create_petsc(xdef_vec,xdef_dof); CHKERRQ(ierr);
 
@@ -481,15 +455,15 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 
 		std::cout<< "area undef is " << undef_global << std::endl;
 
-		ierr = this->initial_condition_before_primal_solve(); CHKERRQ(ierr);
+		ierr = this->initial_condition_before_primal_solve(); CHKERRQ(ierr); 
 
 		if (run_type == initial){
 			// ierr = primal_solve->global_newton_raphson_primal(); CHKERRQ(ierr);
 		}
 
-		ierr = this->initial_condition_after_primal_solve(); CHKERRQ(ierr);
+		ierr = this->initial_condition_after_primal_solve(); CHKERRQ(ierr); 
 
-		ierr = this->initial_condition_dual(); CHKERRQ(ierr);
+		ierr = this->initial_condition_dual(); CHKERRQ(ierr); 
 
 		ierr = this->get_dual_l2_norm(); CHKERRQ(ierr);
 
@@ -500,17 +474,23 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 		while (residual_conv > tol_global || step_no < TOTAL_STEPS)
 		{
 
-			if ( count == 0  || step_no == 10 || step_no%Nprint==0){
+			if (count == 0){
 				ierr = this->deformed_shape_l2_projection(); CHKERRQ(ierr);
 			}
 
-			if ( count == 0 && ::rank == 0){
+			// std::cout << " code is running fine before printing write files " << std::endl;
+
+			if (count == 0 && ::rank == 0){
+
 				ierr = common_utilities->vtk_write(); CHKERRQ(ierr);
 				ierr = common_utilities->restart_write(); CHKERRQ(ierr);
 			}
 
+			// std::cout << " code is running fine after printing write files " << std::endl;
 
 			ierr = this->global_newton_solve(); CHKERRQ(ierr);
+
+			// std::cout << " code is running fine after global newton solve " << std::endl;
 
 			ierr = this->global_newton_update(); CHKERRQ(ierr);
 
@@ -524,7 +504,7 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 
 			ierr = this->get_dual_l2_norm(); CHKERRQ(ierr);
 
-			qf_global = std::sqrt(qf_global)/undef_global;
+			qf_global = std::sqrt(qf_global/undef_global);
 
 			ierr = common_utilities->get_max_val(qfactor, &qf_max); CHKERRQ(ierr);
 
@@ -551,6 +531,10 @@ PetscErrorCode Dual_Solve::global_newton_raphson()
 							norm_rhs << " " << 
 							qf_max << " " << 
 							qf_global << std::endl; 	
+			}
+
+			if (step_no == 10 || step_no%Nprint==0){
+				ierr = this->deformed_shape_l2_projection(); CHKERRQ(ierr);
 			}
 			
 			if ((step_no == 10 || step_no%Nprint==0) && ::rank==0){
@@ -673,15 +657,33 @@ PetscErrorCode Dual_Solve::initial_condition_dual()
 
 	if (dual_ic == zero)
 	{
-		for (int i=0;i<grid->ndof; i++){
+		if (problem_type == inverse)
+		{
+			for (int i=0;i<grid->ndof; i++){
 
-			beta[i][0] = 0.0;
-			beta[i][1] = 0.0;
+				beta[i][0] = 0.0;
+				beta[i][1] = 0.0;
 
-			A_dual[i][0] = 0.0;
-			A_dual[i][1] = 0.0;
-			A_dual[i][2] = 0.0;
-			A_dual[i][3] = 0.0;
+				A_dual[i][0] = 0.0;
+				A_dual[i][1] = 0.0;
+				A_dual[i][2] = 0.0;
+				A_dual[i][3] = 0.0;
+			}
+		}
+		else if (problem_type == forward)
+		{
+			for (int i=0;i<grid->ndof; i++){
+				
+				beta[i][0] = 0.0;
+				beta[i][1] = 0.0;
+
+				A_dual[i][0] = 0.0;
+				A_dual[i][1] = 0.0;
+				A_dual[i][2] = 0.0;
+				A_dual[i][3] = 0.0;
+				A_dual[i][4] = 0.0;
+				A_dual[i][5] = 0.0;
+			}
 		}
 	}
 	else if (dual_ic == non_zero)
@@ -690,11 +692,22 @@ PetscErrorCode Dual_Solve::initial_condition_dual()
 
 		myfile.open("restart_dual.txt",std::ios::in);
 
-		for(int i=0;i<grid->ndof;i++){
-
-			myfile >> beta[i][0] >> beta[i][1] >>
-						A_dual[i][0] >> A_dual[i][1] >> 
-						A_dual[i][2] >> A_dual[i][3];	
+		if (problem_type == inverse)
+		{
+			for(int i=0;i<grid->ndof;i++){
+				myfile >> beta[i][0] >> beta[i][1] >>
+							A_dual[i][0] >> A_dual[i][1] >> 
+							A_dual[i][2] >> A_dual[i][3];	
+			}
+		}
+		else if (problem_type == forward)
+		{
+			for(int i=0;i<grid->ndof;i++){
+				myfile >> beta[i][0] >> beta[i][1] >>
+							A_dual[i][0] >> A_dual[i][1] >> 
+							A_dual[i][2] >> A_dual[i][3] >>
+							A_dual[i][4] >> A_dual[i][5];	
+			}
 		}
 
 		myfile.close();
@@ -709,7 +722,7 @@ PetscErrorCode Dual_Solve::initial_condition_dual()
 		val[0] = beta[i][0];
 		val[1] = beta[i][1];
 
-		for (int k1=0;k1<dim;k1++){
+		for (int k1=0;k1<this->dim;k1++){
 			for (int k2=0;k2<2;k2++){
 
 				val[2+2*k1+k2] = A_dual[i][2*k1+k2];
@@ -749,13 +762,27 @@ PetscErrorCode Dual_Solve::initial_condition_before_primal_solve()
 
 			// ierr = this->initial_guess_hat_shape(); CHKERRQ(ierr);
 		}
+		
+		if (problem_type == inverse)
+		{
+			// base state same as initial state
+			for(int i=0;i<grid->ndof;i++){
 
-		// base state same as initial state
-		for(int i=0;i<grid->ndof;i++){
-
-			x_0_def[i][0] = x_def[i][0];
-			x_0_def[i][1] = x_def[i][1];	
+				x_0_def[i][0] = x_def[i][0];
+				x_0_def[i][1] = x_def[i][1];	
+			}
 		}
+		else if (problem_type == forward)
+		{
+			// base state same as initial state
+			for(int i=0;i<grid->ndof;i++){
+
+				x_0_def[i][0] = x_def[i][0];
+				x_0_def[i][1] = x_def[i][1];
+				x_0_def[i][2] = x_def[i][2];	
+			}
+		}
+		
 	}
 	else if (run_type == restart)
 	{
@@ -794,7 +821,7 @@ PetscErrorCode Dual_Solve::initial_condition_after_primal_solve()
 	{
 		ierr = this->get_x_F_at_gps_restart_guess(); CHKERRQ(ierr);
 	}
-	else 
+	else if (run_type == initial || run_type == restart)
 	{	
 		ierr = this->get_x_F_at_gps_initial_guess(); CHKERRQ(ierr);	
 	}
@@ -814,8 +841,8 @@ PetscErrorCode Dual_Solve::initial_condition_primal_to_dual()
 	}
 	else if (mesh_input == trelis_mesh || mesh_input == spherical){
 		
-		// ierr = this->initial_guess_trelis(); CHKERRQ(ierr);
-		ierr = this->initial_guess_hat_shape(); CHKERRQ(ierr);
+		ierr = this->initial_guess_trelis(); CHKERRQ(ierr);
+		// ierr = this->initial_guess_hat_shape(); CHKERRQ(ierr);
 	}
 
 	// get initial coordinates (x_gp) and deformation gradient tensor (F_gp) at gpts
@@ -903,11 +930,7 @@ PetscErrorCode Dual_Solve::copying_petsc_dual_vector_to_stdvector()
 
 	PetscErrorCode ierr;
 
-	double max1 = 0.0, max2 = 0.0, max3 = 0.0, max4 = 0.0, max5 = 0.0, max6 = 0.0;
-
-	if (problem_type == forward){
-		throw " copying_petsc_dual_vector_to_stdvector coded only for 2+4=6 dof (for the inverse problem)";
-	}
+	double max1 = 0.0, max2 = 0.0, max3 = 0.0, max4 = 0.0, max5 = 0.0, max6 = 0.0, max7 = 0.0, max8 = 0.0;
 
 	if (this->count == 0){
 		ierr = VecScatterCreateToAll(dual_vec,&ctx_dual,&dual_vec_SEQ); CHKERRQ(ierr);
@@ -918,28 +941,64 @@ PetscErrorCode Dual_Solve::copying_petsc_dual_vector_to_stdvector()
 
 	ierr = VecGetValues(dual_vec_SEQ,grid->tdof,ind_set_xi,xi_dual); CHKERRQ(ierr);
 
-	for (int i=0;i<grid->ndof;i++){
+	if (problem_type == inverse)
+	{
+		for (int i=0;i<grid->ndof;i++){
 
-		beta[i][0] = xi_dual[6*i];
-		beta[i][1] = xi_dual[6*i+1];
+			beta[i][0] = xi_dual[grid->dof_per_node*i];
+			beta[i][1] = xi_dual[grid->dof_per_node*i+1];
 
-		A_dual[i][0] = xi_dual[6*i+2];
-		A_dual[i][1] = xi_dual[6*i+3];
-		A_dual[i][2] = xi_dual[6*i+4];
-		A_dual[i][3] = xi_dual[6*i+5];
+			A_dual[i][0] = xi_dual[grid->dof_per_node*i+2];
+			A_dual[i][1] = xi_dual[grid->dof_per_node*i+3];
+			A_dual[i][2] = xi_dual[grid->dof_per_node*i+4];
+			A_dual[i][3] = xi_dual[grid->dof_per_node*i+5];
 
-	}// loop over nodes
+		}// loop over nodes
+	}
+	else if (problem_type == forward)
+	{
+		for (int i=0;i<grid->ndof;i++){
+			
+			beta[i][0] = xi_dual[grid->dof_per_node*i];
+			beta[i][1] = xi_dual[grid->dof_per_node*i+1];
 
+			A_dual[i][0] = xi_dual[grid->dof_per_node*i+2];
+			A_dual[i][1] = xi_dual[grid->dof_per_node*i+3];
+			A_dual[i][2] = xi_dual[grid->dof_per_node*i+4];
+			A_dual[i][3] = xi_dual[grid->dof_per_node*i+5];
+			A_dual[i][4] = xi_dual[grid->dof_per_node*i+6];
+			A_dual[i][5] = xi_dual[grid->dof_per_node*i+7];
 
-	for (int i=0;i<grid->ndof;i++){
+		}// loop over nodes
+	}
 
-		xi_dual[6*i] = 0.0;
-		xi_dual[6*i+1] = 0.0;
-		xi_dual[6*i+2] = 0.0;
-		xi_dual[6*i+3] = 0.0;
-		xi_dual[6*i+4] = 0.0;
-		xi_dual[6*i+5] = 0.0;
+	if (problem_type == inverse)
+	{
+		for (int i=0;i<grid->ndof;i++){
 
+			xi_dual[grid->dof_per_node*i] = 0.0;
+			xi_dual[grid->dof_per_node*i+1] = 0.0;
+			xi_dual[grid->dof_per_node*i+2] = 0.0;
+			xi_dual[grid->dof_per_node*i+3] = 0.0;
+			xi_dual[grid->dof_per_node*i+4] = 0.0;
+			xi_dual[grid->dof_per_node*i+5] = 0.0;
+
+		}
+	}
+	if (problem_type == forward)
+	{
+		for (int i=0;i<grid->ndof;i++){
+
+			xi_dual[grid->dof_per_node*i] = 0.0;
+			xi_dual[grid->dof_per_node*i+1] = 0.0;
+			xi_dual[grid->dof_per_node*i+2] = 0.0;
+			xi_dual[grid->dof_per_node*i+3] = 0.0;
+			xi_dual[grid->dof_per_node*i+4] = 0.0;
+			xi_dual[grid->dof_per_node*i+5] = 0.0;
+			xi_dual[grid->dof_per_node*i+6] = 0.0;
+			xi_dual[grid->dof_per_node*i+7] = 0.0;
+
+		}
 	}
 
 	if (this->count == 0){
@@ -953,36 +1012,52 @@ PetscErrorCode Dual_Solve::copying_petsc_dual_vector_to_stdvector()
 
 	for (int i=0;i<grid->ndof;i++){
 
-		beta_rhs[i][0] = xi_dual[6*i];
-		beta_rhs[i][1] = xi_dual[6*i+1];
+		beta_rhs[i][0] = xi_dual[grid->dof_per_node*i];
+		beta_rhs[i][1] = xi_dual[grid->dof_per_node*i+1];
 
-		A_dual_rhs[i][0] = xi_dual[6*i+2];
-		A_dual_rhs[i][1] = xi_dual[6*i+3];
-		A_dual_rhs[i][2] = xi_dual[6*i+4];
-		A_dual_rhs[i][3] = xi_dual[6*i+5];
+		A_dual_rhs[i][0] = xi_dual[grid->dof_per_node*i+2];
+		A_dual_rhs[i][1] = xi_dual[grid->dof_per_node*i+3];
+		A_dual_rhs[i][2] = xi_dual[grid->dof_per_node*i+4];
+		A_dual_rhs[i][3] = xi_dual[grid->dof_per_node*i+5];
 
-		if (std::abs(xi_dual[6*i]) > max1){
-			max1 = std::abs(xi_dual[6*i]);
+		if (problem_type == forward){
+			A_dual_rhs[i][4] = xi_dual[grid->dof_per_node*i+6];
+			A_dual_rhs[i][5] = xi_dual[grid->dof_per_node*i+7];
 		}
 
-		if (std::abs(xi_dual[6*i + 1]) > max2){
-			max2 = std::abs(xi_dual[6*i + 1]);
+		if (std::abs(xi_dual[grid->dof_per_node*i]) > max1){
+			max1 = std::abs(xi_dual[grid->dof_per_node*i]);
 		}
 
-		if (std::abs(xi_dual[6*i + 2]) > max3){
-			max3 = std::abs(xi_dual[6*i + 2]);
+		if (std::abs(xi_dual[grid->dof_per_node*i + 1]) > max2){
+			max2 = std::abs(xi_dual[grid->dof_per_node*i + 1]);
 		}
 
-		if (std::abs(xi_dual[6*i + 3]) > max4){
-			max4 = std::abs(xi_dual[6*i + 3]);
+		if (std::abs(xi_dual[grid->dof_per_node*i + 2]) > max3){
+			max3 = std::abs(xi_dual[grid->dof_per_node*i + 2]);
 		}
 
-		if (std::abs(xi_dual[6*i + 4]) > max5){
-			max5 = std::abs(xi_dual[6*i + 4]);
+		if (std::abs(xi_dual[grid->dof_per_node*i + 3]) > max4){
+			max4 = std::abs(xi_dual[grid->dof_per_node*i + 3]);
 		}
 
-		if (std::abs(xi_dual[6*i + 5]) > max6){
-			max6 = std::abs(xi_dual[6*i + 5]);
+		if (std::abs(xi_dual[grid->dof_per_node*i + 4]) > max5){
+			max5 = std::abs(xi_dual[grid->dof_per_node*i + 4]);
+		}
+
+		if (std::abs(xi_dual[grid->dof_per_node*i + 5]) > max6){
+			max6 = std::abs(xi_dual[grid->dof_per_node*i + 5]);
+		}
+
+		if (problem_type == forward)
+		{
+			if (std::abs(xi_dual[grid->dof_per_node*i + 6]) > max7){
+				max7 = std::abs(xi_dual[grid->dof_per_node*i + 6]);
+			}
+
+			if (std::abs(xi_dual[grid->dof_per_node*i + 7]) > max8){
+				max8 = std::abs(xi_dual[grid->dof_per_node*i + 7]);
+			}
 		}
 
 	}// loop over nodes
@@ -992,7 +1067,9 @@ PetscErrorCode Dual_Solve::copying_petsc_dual_vector_to_stdvector()
 										<< " Adual_1 is " << max3 << " \n "
 										<< " Adual_2 is " << max4 << " \n "
 										<< " Adual_3 is " << max5 << " \n "
-										<< " Adual_4 is " << max6 << std::endl;
+										<< " Adual_4 is " << max6 << " \n " 
+										<< " Adual_5 is " << max7 << " \n " 
+										<< " Adual_6 is " << max8 << std::endl;
 									
 
 
@@ -1047,9 +1124,9 @@ PetscErrorCode Dual_Solve::initial_guess_plane()
 {
 
 
-	if (problem_type == forward){
-		throw " intial_guess_plane coded only (for the inverse problem)";
-	}
+	// if (problem_type == forward){
+	// 	throw " intial_guess_plane coded only (for the inverse problem)";
+	// }
 
 	double r = grid->l1;
 	double z = grid->l2;
@@ -1073,7 +1150,11 @@ PetscErrorCode Dual_Solve::initial_guess_plane()
 
 			x_def[ind][0] = -r_cr/2.0 + r_cr*((double)i/(double)grid->nx);
 			x_def[ind][1] = -z_cr/2.0 + z_cr*((double)j/(double)grid->ny);
-			// x_def[ind][2] = 0.0;
+			
+			if (problem_type == forward){
+				x_def[ind][2] = 0.0;
+			}
+			
 		}	
 	}
 
@@ -1088,12 +1169,49 @@ PetscErrorCode Dual_Solve::initial_guess_trelis()
 
 	myfile.open("./input/initial_guess.in",std::ios::in);
 
-	for(int i=0;i<grid->ndof;i++){
+	if (problem_type == inverse)
+	{
+		for(int i=0;i<grid->ndof;i++){
 
-		myfile >> x_def[i][0] >> x_def[i][1];	
+			myfile >> x_def[i][0] >> x_def[i][1];	
+		}
+	}
+	else if (problem_type == forward)
+	{
+		for(int i=0;i<grid->ndof;i++){
+
+			myfile >> x_def[i][0] >> x_def[i][1] >> x_def[i][2];	
+		}
+		// scaling the height proportionally
+		for (int i=0;i<grid->ndof;++i){
+			x_def[i][2] = 0.05*x_def[i][2];
+		}
 	}
 
 	myfile.close();
+
+	// double r;
+	// double r_0; //-0.95
+	// double R; 
+	// double z_c; 
+	// double val;
+
+	// for (int i=0;i<grid->ndof;++i){
+
+	// 	r = 4.5;
+	// 	r_0 = -0.5;
+	// 	R = std::sqrt(r*r + r_0*r_0);
+	// 	z_c = R + ((r_0-R)*2.0*R*(R-r_0)/((R-r_0)*(R-r_0) + r*r));
+
+	// 	val = (R-r_0)*(R-r_0) + x_def[i][0]*x_def[i][0] + x_def[i][1]*x_def[i][1];
+	// 	x_def[i][0] = 2.0*R*(R-r_0)*x_def[i][0]/val;//X_ref[i][0];
+	// 	x_def[i][1] = 2.0*R*(R-r_0)*x_def[i][1]/val;//X_ref[i][1];
+	// 	x_def[i][2] = R + ((r_0-R)*2.0*R*(R-r_0)/val) - z_c;
+
+	// 	// std::cout << " x_def is " << x_def[i][0] << " "
+	// 	// 							<< x_def[i][1] << " "
+	// 	// 							<< x_def[i][2] << std::endl;
+	// }
 
 	return 0;
 }
@@ -1195,9 +1313,17 @@ PetscErrorCode Dual_Solve::get_x_F_at_gps_initial_guess()
 
 		myfile.open("restart_x_0_def.txt",std::ios::in);
 
-		for(int i=0;i<grid->ndof;i++){
-
-			myfile >> x_0_def[i][0] >> x_0_def[i][1];	
+		if (problem_type == inverse)
+		{
+			for(int i=0;i<grid->ndof;i++){
+				myfile >> x_0_def[i][0] >> x_0_def[i][1];	
+			}
+		}
+		else if (problem_type == forward)
+		{
+			for(int i=0;i<grid->ndof;i++){
+				myfile >> x_0_def[i][0] >> x_0_def[i][1] >> x_0_def[i][2];	
+			}
 		}
 
 		myfile.close();
@@ -1238,7 +1364,7 @@ PetscErrorCode Dual_Solve::get_x_F_at_gps_initial_guess()
 
 				for (int alpha=0;alpha<2;alpha++){
 					
-					ind = d*this->dim + alpha;
+					ind = d*2 + alpha;
 
 					F_gp[ie][gp][ind] = 0.0; // initializing to zero
 					F_0_gp[ie][gp][ind] = 0.0; // initializing to zero
@@ -1251,6 +1377,8 @@ PetscErrorCode Dual_Solve::get_x_F_at_gps_initial_guess()
 
 					F_0[d][alpha] = F_0_gp[ie][gp][ind];
 
+					// std::cout << "F_0 is " << F_0_gp[ie][gp][ind] << std::endl;
+
 				}
 
 			}
@@ -1262,7 +1390,7 @@ PetscErrorCode Dual_Solve::get_x_F_at_gps_initial_guess()
 			for (int d=0;d<this->dim;d++){
 				for (int alpha=0;alpha<2;alpha++){
 
-					ind = d*this->dim + alpha;
+					ind = d*2 + alpha;
 
 					F_0_dual_gp[ie][gp][ind] = F_0_dual[d][alpha];
 				}
@@ -1286,60 +1414,110 @@ PetscErrorCode Dual_Solve::get_x_F_at_gps_restart_guess()
 
 	myfile1.open("restart_x_gp.txt",std::ios::in);
 
-	for(int ie=0;ie<grid->nel;ie++){
+	if (problem_type == inverse)
+	{
+		for(int ie=0;ie<grid->nel;ie++){
 
-		for (int gp=0;gp<fem->ngp;gp++){
+			for (int gp=0;gp<fem->ngp;gp++){
 
-			myfile1 >> x_gp[ie][gp][0] >> x_gp[ie][gp][1];
-		}	
+				myfile1 >> x_gp[ie][gp][0] >> x_gp[ie][gp][1];
+			}	
+		}
+	}
+	else if (problem_type == forward)
+	{
+		for(int ie=0;ie<grid->nel;ie++){
+
+			for (int gp=0;gp<fem->ngp;gp++){
+
+				myfile1 >> x_gp[ie][gp][0] >> x_gp[ie][gp][1] >> x_gp[ie][gp][2];
+			}	
+		}
+
 	}
 
 	myfile1.close();
 
 	myfile2.open("restart_F_gp.txt",std::ios::in);
 
-	for(int ie=0;ie<grid->nel;ie++){
+	if (problem_type == inverse)
+	{
+		for(int ie=0;ie<grid->nel;ie++){
+			for (int gp=0;gp<fem->ngp;gp++){
 
-		for (int gp=0;gp<fem->ngp;gp++){
+				myfile2 >> F_gp[ie][gp][0] >> F_gp[ie][gp][1] >> 
+							F_gp[ie][gp][2] >> F_gp[ie][gp][3];
+			}	
+		}
+	}
+	else if (problem_type == forward)
+	{
+		for(int ie=0;ie<grid->nel;ie++){
+			for (int gp=0;gp<fem->ngp;gp++){
 
-			myfile2 >> F_gp[ie][gp][0] >> F_gp[ie][gp][1] >> 
-						F_gp[ie][gp][2] >> F_gp[ie][gp][3];
-		}	
+				myfile2 >> F_gp[ie][gp][0] >> F_gp[ie][gp][1] >> 
+							F_gp[ie][gp][2] >> F_gp[ie][gp][3] >>
+							F_gp[ie][gp][4] >> F_gp[ie][gp][5];
+			}	
+		}
 	}
 	
 	myfile2.close();
 
 	myfile3.open("restart_x_0_gp.txt",std::ios::in);
 
-	for(int ie=0;ie<grid->nel;ie++){
+	if (problem_type == inverse)
+	{
+		for(int ie=0;ie<grid->nel;ie++){
+			for (int gp=0;gp<fem->ngp;gp++){
 
-		for (int gp=0;gp<fem->ngp;gp++){
+				myfile3 >> x_0_gp[ie][gp][0] >> x_0_gp[ie][gp][1];
+			}	
+		}
+	}
+	else if (problem_type == forward)
+	{
+		for(int ie=0;ie<grid->nel;ie++){
+			for (int gp=0;gp<fem->ngp;gp++){
 
-			myfile3 >> x_0_gp[ie][gp][0] >> x_0_gp[ie][gp][1];
-		}	
+				myfile3 >> x_0_gp[ie][gp][0] >> x_0_gp[ie][gp][1] >> x_0_gp[ie][gp][2];
+			}	
+		}
 	}
 
 	myfile3.close();
 
 	myfile4.open("restart_F_0_gp.txt",std::ios::in);
 
-	for(int ie=0;ie<grid->nel;ie++){
+	if (problem_type == inverse)
+	{
+		for(int ie=0;ie<grid->nel;ie++){
+			for (int gp=0;gp<fem->ngp;gp++){
 
-		for (int gp=0;gp<fem->ngp;gp++){
-
-			myfile4 >> F_0_gp[ie][gp][0] >> F_0_gp[ie][gp][1] >> 
-						F_0_gp[ie][gp][2] >> F_0_gp[ie][gp][3];
-		}	
+				myfile4 >> F_0_gp[ie][gp][0] >> F_0_gp[ie][gp][1] >> 
+							F_0_gp[ie][gp][2] >> F_0_gp[ie][gp][3];
+			}	
+		}
 	}
-	
-	myfile4.close();
+	else if (problem_type == forward)
+	{
+		for(int ie=0;ie<grid->nel;ie++){
+			for (int gp=0;gp<fem->ngp;gp++){
 
+				myfile4 >> F_0_gp[ie][gp][0] >> F_0_gp[ie][gp][1] >> 
+							F_0_gp[ie][gp][2] >> F_0_gp[ie][gp][3] >>
+							F_0_gp[ie][gp][4] >> F_0_gp[ie][gp][5];
+			}	
+		}
+	}
+		
+	myfile4.close();
 
 	MyMat <double> E_dual_el(fem->ngp,MyVec <double> (2*grid->X_DOF));
 
-	MyMat <double> F_0_dual(dim,MyVec<double>(2));
+	MyMat <double> F_0_dual(this->dim,MyVec<double>(2));
 
-	MyMat <double> F_0(dim,MyVec<double>(2));
+	MyMat <double> F_0(this->dim,MyVec<double>(2));
 
 	MyMat <double> G_dual(2,MyVec<double>(2));
 
@@ -1362,7 +1540,7 @@ PetscErrorCode Dual_Solve::get_x_F_at_gps_restart_guess()
 				
 				for (int alpha=0;alpha<2;alpha++){
 					
-					ind = d*this->dim + alpha;
+					ind = d*2 + alpha;
 
 					F_0[d][alpha] = F_0_gp[ie][gp][ind];
 
@@ -1376,7 +1554,7 @@ PetscErrorCode Dual_Solve::get_x_F_at_gps_restart_guess()
 			for (int d=0;d<this->dim;d++){
 				for (int alpha=0;alpha<2;alpha++){
 
-					ind = d*this->dim + alpha;
+					ind = d*2 + alpha;
 
 					F_0_dual_gp[ie][gp][ind] = F_0_dual[d][alpha];
 				}
@@ -1444,7 +1622,7 @@ PetscErrorCode Dual_Solve::deformed_shape_l2_projection()
 
 		for (int i=0;i<fem->ngp;i++){
 
-			for (int k=0;k<dim;k++){
+			for (int k=0;k<this->dim;k++){
 				x_0_gp_el[i][k] = x_0_gp[ie][i][k];
 			}
 		}
@@ -1525,6 +1703,7 @@ PetscErrorCode Dual_Solve::deformed_shape_l2_projection()
 		for (int d=0;d<this->dim;d++){
 
 			x_def[i][d] = x_def_vec[this->dim*i+d];
+			// std::cout << " x_def for i " << i << " and d " << d << " is " << x_def[i][d] << std::endl;
 		}
 	}
 
@@ -3453,6 +3632,9 @@ PetscErrorCode Dual_Solve::elem_force_vector(MyMat <double> beta_el, MyMat <doub
 		
 		ierr = this->get_invariants(tr_C,det_C,&mu1,&mu2); CHKERRQ(ierr);
 
+		// std::cout << "mu1 is " << mu1 << " and mu2 is " << mu2 << std::endl;
+		// std::cout << "mu1 imposed is " << lambda_1*lambda_1 << " and mu2 imposed is " << lambda_2*lambda_2 << std::endl; 
+
 		for (int p=0;p<fem->node_per_el;p++){
 
 			fe[p*grid->dof_per_node] = fem->psi[i][p]*(mu1- (lambda_1*lambda_1));
@@ -3461,7 +3643,7 @@ PetscErrorCode Dual_Solve::elem_force_vector(MyMat <double> beta_el, MyMat <doub
 			for (int k1=0;k1<dim;k1++){
 				for (int k2=0;k2<2;k2++){
 
-					fe[p*grid->dof_per_node+2+k1*this->dim+k2] = fem->psi[i][p]*F[k1][k2] 
+					fe[p*grid->dof_per_node+2+k1*2+k2] = fem->psi[i][p]*F[k1][k2] 
 														+ fem->dpsi[i][p][k2]*x_gp_el[i][k1]; 
 				}
 			}
@@ -3473,6 +3655,15 @@ PetscErrorCode Dual_Solve::elem_force_vector(MyMat <double> beta_el, MyMat <doub
 		}
 
 	}// loop over gpts
+
+	// std::cout << "rhs_el 0 dof is " <<  rhs_el[0] << std::endl;
+	// std::cout << "rhs_el 1 dof is " <<  rhs_el[1] << std::endl;
+	// std::cout << "rhs_el 2 dof is " <<  rhs_el[2] << std::endl;
+	// std::cout << "rhs_el 3 dof is " <<  rhs_el[3] << std::endl;
+	// std::cout << "rhs_el 4 dof is " <<  rhs_el[4] << std::endl;
+	// std::cout << "rhs_el 5 dof is " <<  rhs_el[5] << std::endl;
+	// std::cout << "rhs_el 6 dof is " <<  rhs_el[6] << std::endl;
+	// std::cout << "rhs_el 7 dof is " <<  rhs_el[7] << std::endl;
 
 	return 0;
 }
@@ -3521,6 +3712,8 @@ PetscErrorCode Dual_Solve::get_primal_fields(MyMat <double> beta_el, MyMat <doub
 				}
 			}
 			x_gp_el[gp][k1] = x_0_gp_el[gp][k1] - (1.0/this->px)*tmp;
+			
+			// std::cout << "diff in x and x_0 " << - (1.0/this->px)*tmp << std::endl;
 		} 		
 
 		// for (int d=0;d<this->dim;d++){
@@ -3534,23 +3727,23 @@ PetscErrorCode Dual_Solve::get_primal_fields(MyMat <double> beta_el, MyMat <doub
 
 		// }
 
-		for (int k1=0;k1<this->dim;k1++){
-			for (int k2=0; k2<2; k2++){
+		// for (int k1=0;k1<this->dim;k1++){
+		// 	for (int k2=0; k2<2; k2++){
 
-				F_guess[k1][k2] = 0.0;
+		// 		F_guess[k1][k2] = 0.0;
 
-				for (int p=0;p<fem->node_per_el;p++){
-					F_guess[k1][k2] = F_guess[k1][k2] + fem->dpsi[gp][p][k2]*xdef_el[p][k1];
-				}
-			}
-		}
+		// 		for (int p=0;p<fem->node_per_el;p++){
+		// 			F_guess[k1][k2] = F_guess[k1][k2] + fem->dpsi[gp][p][k2]*xdef_el[p][k1];
+		// 		}
+		// 	}
+		// }
 
 
 		for (int k1=0;k1<this->dim;k1++){
 			for (int k2=0;k2<2;k2++){
 				
 				index = k1*2 + k2;
-				// F_guess[k1][k2] = F_guess_gp_el[gp][index];
+				F_guess[k1][k2] = F_guess_gp_el[gp][index];
 				F_0_dual[k1][k2] = F_0_dual_gp_el[gp][index];
 			}
 		}
@@ -3593,9 +3786,19 @@ PetscErrorCode Dual_Solve::get_primal_fields(MyMat <double> beta_el, MyMat <doub
 				index = k1*2 + k2;
 				F_gp_el[gp][index] = F_sol[k1][k2];	
 			}
-		}	
+		}
+
+		// for (int k1=0;k1<dim;k1++){
+		// 	for (int k2=0;k2<2;k2++){
+
+		// 		index = k1*2 + k2;
+		// 		std::cout << " F diff after mapping " << F_sol[k1][k2] - F_guess[k1][k2] << std::endl;
+		// 	}
+		// }	
 
 	} // loop over gpts
+
+
 
 	return 0;
 }
@@ -3861,6 +4064,8 @@ PetscErrorCode Dual_Solve::local_newton_for_F(int gp, MyMat <double> beta_el, My
 		ierr = this->second_derivative_of_invariants(eig_v1,eig_v2,mu1,mu2,tr_C,C,G_dual,G_real,F_guess,dd_mu1_FF,dd_mu2_FF); CHKERRQ(ierr);
 		// need to code for coalescence case of eigenvalues
 
+		sum_norm = 0.0;
+
 		ierr = this->get_L2_norm_F_diff_F_0(F_guess, F_guess_dual, F_0_real, F_0_dual, &sum_norm); CHKERRQ(ierr);
 
 
@@ -3876,7 +4081,7 @@ PetscErrorCode Dual_Solve::local_newton_for_F(int gp, MyMat <double> beta_el, My
 				f_local[index1] = -(1.0/this->pf)*(A_at_gp  
 								+ d_mu1_F[index1]*beta_1_gp
 								+ d_mu2_F[index1]*beta_2_gp
-								// + (this->pf*std::pow(sum_norm,PP-1)*(F_guess_dual[k][gamma] - F_0_dual[k][gamma]))
+								+ (this->pf*std::pow(sum_norm,PP-1)*(F_guess_dual[k][gamma] - F_0_dual[k][gamma]))
 								+ this->pf*(F_guess_dual[k][gamma] - F_0_dual[k][gamma]));
 
 
@@ -3899,9 +4104,9 @@ PetscErrorCode Dual_Solve::local_newton_for_F(int gp, MyMat <double> beta_el, My
 							}
 
 							k_local[index1][index2] = (1.0/this->pf)*( 
-								// (this->pf*std::pow(sum_norm,PP-1)*II[k][p]*G_dual[omega][gamma]) +
-								// (2.0*(PP-1.0)*this->pf*p_norm_F*
-								// (F_guess_dual[p][omega] - F_0_dual[p][omega])*(F_guess_dual[k][gamma] - F_0_dual[k][gamma]))
+								(this->pf*std::pow(sum_norm,PP-1)*II[k][p]*G_dual[omega][gamma]) +
+								(2.0*(PP-1.0)*this->pf*p_norm_F*
+								(F_guess_dual[p][omega] - F_0_dual[p][omega])*(F_guess_dual[k][gamma] - F_0_dual[k][gamma]))
 								+ (this->pf*II[p][k]*G_dual[omega][gamma]) +
 								+ dd_mu1_FF[index1][index2]*beta_1_gp + dd_mu2_FF[index1][index2]*beta_2_gp);
 						}
@@ -3924,9 +4129,9 @@ PetscErrorCode Dual_Solve::local_newton_for_F(int gp, MyMat <double> beta_el, My
 
 							// matrix local
 							k_local[index1][index2] = (1.0/this->pf)*(
-								// (this->pf*std::pow(sum_norm,PP-1)*II[k][p]*G_dual[omega][gamma]) + 
-								// (2.0*(PP-1.0)*this->pf*p_norm_F*
-								// (F_guess_dual[p][omega] - F_0_dual[p][omega])*(F_guess_dual[k][gamma] - F_0_dual[k][gamma]))
+								(this->pf*std::pow(sum_norm,PP-1)*II[k][p]*G_dual[omega][gamma]) + 
+								(2.0*(PP-1.0)*this->pf*p_norm_F*
+								(F_guess_dual[p][omega] - F_0_dual[p][omega])*(F_guess_dual[k][gamma] - F_0_dual[k][gamma]))
 								+ (this->pf*II[p][k]*G_dual[omega][gamma]) +
 								+ dd_mu1_FF[index1][index2]*beta_1_gp + dd_mu2_FF[index1][index2]*beta_2_gp);
 						}
@@ -3974,7 +4179,7 @@ PetscErrorCode Dual_Solve::local_newton_for_F(int gp, MyMat <double> beta_el, My
 
 		local_step = local_step + 1;
 
-		if (local_step > 10 || residual_local > 1e+4){ //|| local_step > 500
+		if (local_step > 30 || residual_local > 1e+4){ //|| local_step > 500
 			std::cout << "********************" << std::endl;
 			std::cout << "mu1 and mu2 are " <<  mu1 << " and " << mu2 << std::endl;
 			std::cout << "mu1 - mu_imp and mu2 - mu_imp are " << (mu1 - lambda_1*lambda_1) << " and " << (mu2- lambda_2*lambda_2) << std::endl;
@@ -3984,10 +4189,10 @@ PetscErrorCode Dual_Solve::local_newton_for_F(int gp, MyMat <double> beta_el, My
 			std::cout << " local norm is " << delta_F_norm << " and " << residual_local << std::endl;
 			for (int ind1=0; ind1<F_DOF; ind1++){
 				// std::cout << " d_mu1_F and d_mu2_F are " << d_mu1_F[ind1] << " and " << d_mu2_F[ind1] << std::endl;
-				for (int ind2=0;ind2<4;ind2++){
+				for (int ind2=0;ind2<F_DOF;ind2++){
 					// std::cout << " dd_mu1_FF and dd_mu2_FF for " << ind1 << " , " << ind2 << " are " << 
 						// dd_mu1_FF[ind1][ind2] << " and " << dd_mu2_FF[ind1][ind2] << std::endl;
-					std::cout << "k_local is " << k_local[ind1][ind2] << std::endl;
+					std::cout << "k_local for ind1 = " << ind1 << " and ind2 = " << ind2 << " is " << k_local[ind1][ind2] << std::endl;
 				}
 			}
 			std::cout << "********************" << std::endl;
@@ -4046,6 +4251,8 @@ PetscErrorCode Dual_Solve::global_newton_solve()
 
 	MyMat<double> A_el(fem->node_per_el, MyVec<double>(grid->A_DOF));
 
+	// std::cout << " print dof_per_el. for " << fem->dof_per_el << std::endl;
+
 	int node_el;
 
 	double rhs_el[fem->dof_per_el];
@@ -4078,9 +4285,9 @@ PetscErrorCode Dual_Solve::global_newton_solve()
 
 	MyMat <double> xdef_el(fem->node_per_el,MyVec<double>(this->dim));
 
-	MyMat <double> Eig1_el(fem->ngp, MyVec <double> (this->dim));
+	MyMat <double> Eig1_el(fem->ngp, MyVec <double> (2));
 
-	MyMat <double> Eig2_el(fem->ngp, MyVec <double> (this->dim));
+	MyMat <double> Eig2_el(fem->ngp, MyVec <double> (2));
 
 	for (int ie=Istart;ie<Iend;++ie)
 	{	
@@ -4147,14 +4354,17 @@ PetscErrorCode Dual_Solve::global_newton_solve()
 			}
 		}
 
+		// std::cout << " code runs up to get_primal_fields " << std::endl;
 
 		// primal fields (obtained from mapping from dual to primal)
 		ierr = this->get_primal_fields(beta_el,A_el,E_dual_el,xdef_el,F_guess_gp_el,
 												x_0_gp_el,x_gp_el,F_0_dual_gp_el,F_gp_el); CHKERRQ(ierr);
 
+		// std::cout << " code runs up to elem_stiff_force_vector_global_newton " << std::endl;
+
 		// stiff matrix and rhs vector per elem
 		ierr = this->elem_stiff_force_vector_global_newton(beta_el,A_el,E_dual_el,E_real_el,detJ_e,
-											rhs_el,ke,x_gp_el,F_gp_el,F_0_dual_gp_el,Eig1_el, Eig2_el); CHKERRQ(ierr);
+											rhs_el,ke,x_gp_el,F_gp_el,F_0_dual_gp_el,Eig1_el,Eig2_el); CHKERRQ(ierr);
 
 
 		// storing primal fields at gpts
@@ -4168,7 +4378,7 @@ PetscErrorCode Dual_Solve::global_newton_solve()
 				F_gp[ie][i][k] = F_gp_el[i][k];
 			}
 
-			for (int k=0; k<this->dim; k++){
+			for (int k=0; k<2; k++){
 				
 				Eig_1_gp[ie][i][k] = Eig1_el[i][k];
 				Eig_2_gp[ie][i][k] = Eig2_el[i][k];
@@ -4237,12 +4447,16 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 
 	MyMat <double> k_local(F_DOF,MyVec <double>(F_DOF));
 
+	// std::cout << "F_DOF is " << F_DOF << std::endl;
+
 	MyVec <double> f_beta_1(F_DOF);
 	MyVec <double> f_beta_2(F_DOF);
 	MyVec <double> f_A11(F_DOF);
 	MyVec <double> f_A12(F_DOF);
 	MyVec <double> f_A21(F_DOF);
 	MyVec <double> f_A22(F_DOF);
+	MyVec <double> f_A31(F_DOF);
+	MyVec <double> f_A32(F_DOF);
 
 	MyVec <double> dF_dbeta_1(F_DOF);
 	MyVec <double> dF_dbeta_2(F_DOF);
@@ -4250,6 +4464,8 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 	MyVec <double> dF_dA12(F_DOF);
 	MyVec <double> dF_dA21(F_DOF);
 	MyVec <double> dF_dA22(F_DOF);
+	MyVec <double> dF_dA31(F_DOF);
+	MyVec <double> dF_dA32(F_DOF);
 
 	MyMat<double> F(dim,MyVec<double>(2));
 
@@ -4291,6 +4507,8 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 	double d_mu1_A12 = 0.0;
 	double d_mu1_A21 = 0.0;
 	double d_mu1_A22 = 0.0;
+	double d_mu1_A31 = 0.0;
+	double d_mu1_A32 = 0.0;
 
 	double d_mu2_beta_1 = 0.0;
 	double d_mu2_beta_2 = 0.0;
@@ -4298,6 +4516,8 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 	double d_mu2_A12 = 0.0;
 	double d_mu2_A21 = 0.0;
 	double d_mu2_A22 = 0.0;
+	double d_mu2_A31 = 0.0;
+	double d_mu2_A32 = 0.0;
 
 	int tmp, ind1, ind2;
 
@@ -4314,28 +4534,36 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 
 	MyVec <double> A_el_gp(grid->A_DOF);
 
-	MyVec <double> Eig1(this->dim);
-	MyVec <double> Eig2(this->dim);
+	MyVec <double> Eig1(2);
+	MyVec <double> Eig2(2);
 
 	MyVec <double> A11_res1(fem->node_per_el);
 	MyVec <double> A12_res1(fem->node_per_el);
 	MyVec <double> A21_res1(fem->node_per_el);
 	MyVec <double> A22_res1(fem->node_per_el);
+	MyVec <double> A31_res1(fem->node_per_el);
+	MyVec <double> A32_res1(fem->node_per_el);
 
 	MyVec <double> A11_res2(fem->node_per_el);
 	MyVec <double> A12_res2(fem->node_per_el);
 	MyVec <double> A21_res2(fem->node_per_el);
 	MyVec <double> A22_res2(fem->node_per_el);
+	MyVec <double> A31_res2(fem->node_per_el);
+	MyVec <double> A32_res2(fem->node_per_el);
 
 	MyVec <double> A11_res3(fem->node_per_el);
 	MyVec <double> A12_res3(fem->node_per_el);
 	MyVec <double> A21_res3(fem->node_per_el);
 	MyVec <double> A22_res3(fem->node_per_el);
+	MyVec <double> A31_res3(fem->node_per_el);
+	MyVec <double> A32_res3(fem->node_per_el);
 
 	MyVec <double> A11_res4(fem->node_per_el);
 	MyVec <double> A12_res4(fem->node_per_el);
 	MyVec <double> A21_res4(fem->node_per_el);
 	MyVec <double> A22_res4(fem->node_per_el);
+	MyVec <double> A31_res4(fem->node_per_el);
+	MyVec <double> A32_res4(fem->node_per_el);
 
 	MyMat <double> dE1_zeta(grid->X_DOF, MyVec <double> (2));
 	MyMat <double> dE2_zeta(grid->X_DOF, MyVec <double> (2));
@@ -4344,16 +4572,27 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 	MyVec <double> A12_stiff1(grid->A_DOF);
 	MyVec <double> A21_stiff1(grid->A_DOF);
 	MyVec <double> A22_stiff1(grid->A_DOF);
+	MyVec <double> A31_stiff1(grid->A_DOF);
+	MyVec <double> A32_stiff1(grid->A_DOF);
 
 	MyMat <double> A11_stiff2(grid->A_DOF, MyVec <double> (fem->node_per_el));
 	MyMat <double> A12_stiff2(grid->A_DOF, MyVec <double> (fem->node_per_el));
 	MyMat <double> A21_stiff2(grid->A_DOF, MyVec <double> (fem->node_per_el));
 	MyMat <double> A22_stiff2(grid->A_DOF, MyVec <double> (fem->node_per_el));
+	MyMat <double> A31_stiff2(grid->A_DOF, MyVec <double> (fem->node_per_el));
+	MyMat <double> A32_stiff2(grid->A_DOF, MyVec <double> (fem->node_per_el));
 
 	MyMat <double> A11_stiff3(grid->A_DOF, MyVec <double> (fem->node_per_el));
 	MyMat <double> A12_stiff3(grid->A_DOF, MyVec <double> (fem->node_per_el));
 	MyMat <double> A21_stiff3(grid->A_DOF, MyVec <double> (fem->node_per_el));
 	MyMat <double> A22_stiff3(grid->A_DOF, MyVec <double> (fem->node_per_el));
+	MyMat <double> A31_stiff3(grid->A_DOF, MyVec <double> (fem->node_per_el));
+	MyMat <double> A32_stiff3(grid->A_DOF, MyVec <double> (fem->node_per_el));
+
+	double dG11_zeta2 = 0.0;
+	double dG12_zeta1 = 0.0;
+	double dG21_zeta2 = 0.0;
+	double dG22_zeta1 = 0.0;
 
 	// derivatives of E_real wrt zeta
 	for (int k=0;k<grid->X_DOF;k++){
@@ -4370,6 +4609,8 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 	// summation over gauss points
 	for (int i=0;i<fem->ngp;i++)
 	{	
+
+		// std::cout << " gp is " << i << std::endl;
 
 		for (int k1=0;k1<this->dim;k1++){
 			for(int k2=0;k2<2;k2++){
@@ -4420,27 +4661,38 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 
 		ierr = this->get_eigenvectors_of_C(C,mu1,mu2,G_dual,eig_v1,eig_v2); CHKERRQ(ierr);
 
-		ierr = this->eigenvectors_on_target_shape(eig_v1,eig_v2,F,G_dual,Eig1,Eig2); CHKERRQ(ierr);
-
+		if (problem_type == inverse){
+			// std::cout << "code runs upto finding eigenvectors on target shape" << std::endl;
+			ierr = this->eigenvectors_on_target_shape(eig_v1,eig_v2,F,G_dual,Eig1,Eig2); CHKERRQ(ierr);
+		}
+		else if (problem_type == forward){
+			ierr = this->eigenvectors_on_reference_shape(eig_v1,eig_v2,E_dual_el,i,Eig1,Eig2); CHKERRQ(ierr);
+		}
+		
+		// std::cout << "code runs upto finding first_derivative_of_invariants" << std::endl;
 		ierr = this->first_derivative_of_invariants(eig_v1,eig_v2,G_dual,F,d_mu1_F,d_mu2_F); CHKERRQ(ierr);
 
+		// std::cout << "code runs upto finding second_derivative_of_invariants" << std::endl;
 		ierr = this->second_derivative_of_invariants(eig_v1,eig_v2,mu1,mu2,tr_C,C,G_dual,G_real,F,dd_mu1_FF,dd_mu2_FF); CHKERRQ(ierr);
 
+		// std::cout << "code runs upto finding get_beta_field_at_gp" << std::endl;
 		ierr = this->get_beta_field_at_gp(beta_el,i,&beta_1_gp,&beta_2_gp); CHKERRQ(ierr);
 
 		ierr = this->get_derivative_of_beta_at_gp(beta_el,i,beta_1_zeta,beta_2_zeta); CHKERRQ(ierr);
 
 		ierr = this->get_L2_norm_F_diff_F_0(F, F_dual, F_0_real, F_0_dual, &sum_norm); CHKERRQ(ierr);
 
-		
-		for (int k=0; k<this->dim; k++){
+		// std::cout << "mu1 is " << mu1 << std::endl;
+		// std::cout << "mu2 is " << mu2 << std::endl;
+
+		for (int k=0; k<2; k++){
 
 			Eig1_el[i][k] = Eig1[k];
 			Eig2_el[i][k] = Eig2[k];
 		}
 		
 
-		for (int k=0;k<dim;k++){
+		for (int k=0;k<this->dim;k++){
 			for (int gamma=0;gamma<2;gamma++){
 
 				ind1 = k*2 + gamma;
@@ -4450,10 +4702,12 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 				f_beta_2[ind1] = -(1.0/this->pf)*d_mu2_F[ind1];
 
 				if (ind1 == 0){
-					f_A11[ind1] = -(1.0/this->pf)*1.0; f_A12[ind1] = 0.0; f_A21[ind1] = 0.0; f_A22[ind1] = 0.0;
+					f_A11[ind1] = -(1.0/this->pf)*1.0; f_A12[ind1] = 0.0; f_A21[ind1] = 0.0; 
+					f_A22[ind1] = 0.0; 
 				}
 				else if (ind1 == 1){
-					f_A11[ind1] = 0.0; f_A12[ind1] = -(1.0/this->pf)*1.0; f_A21[ind1] = 0.0; f_A22[ind1] = 0.0;
+					f_A11[ind1] = 0.0; f_A12[ind1] = -(1.0/this->pf)*1.0; f_A21[ind1] = 0.0; 
+					f_A22[ind1] = 0.0; 
 				}
 				else if (ind1 == 2){
 					f_A11[ind1] = 0.0; f_A12[ind1] = 0.0; f_A21[ind1] = -(1.0/this->pf)*1.0; f_A22[ind1] = 0.0;
@@ -4461,10 +4715,35 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 				else if (ind1 == 3){
 					f_A11[ind1] = 0.0; f_A12[ind1] = 0.0; f_A21[ind1] = 0.0; f_A22[ind1] = -(1.0/this->pf)*1.0;
 				}
+
+				if (problem_type == forward)
+				{
+					if (ind1 == 0){
+						f_A31[ind1] = 0.0; f_A32[ind1] = 0.0;
+					}
+					else if (ind1 == 1){
+						f_A31[ind1] = 0.0; f_A32[ind1] = 0.0;
+					}
+					else if (ind1 == 2){
+						f_A31[ind1] = 0.0; f_A32[ind1] = 0.0;
+					}
+					else if (ind1 == 3){
+						f_A31[ind1] = 0.0; f_A32[ind1] = 0.0;
+					}
+					else if (ind1 == 4){
+						f_A11[ind1] = 0.0; f_A12[ind1] = 0.0; f_A21[ind1] = 0.0; 
+						f_A22[ind1] = 0.0; f_A31[ind1] = -(1.0/this->pf)*1.0; f_A32[ind1] = 0.0;
+					}
+					else if (ind1 == 5){
+						f_A11[ind1] = 0.0; f_A12[ind1] = 0.0; f_A21[ind1] = 0.0; 
+						f_A22[ind1] = 0.0; f_A31[ind1] = 0.0; f_A32[ind1] = -(1.0/this->pf)*1.0;
+					}
+
+				}
 											
 				if (std::abs(mu1 - mu2) > 1e-3){
 
-					for (int p=0; p<dim; p++){
+					for (int p=0; p<this->dim; p++){
 						for (int omega=0; omega<2; omega++){
 
 							ind2 = p*2 + omega;
@@ -4478,17 +4757,17 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 
 							k_local[ind1][ind2] = (1.0/this->pf)*(dd_mu1_FF[ind1][ind2]*beta_1_gp
 													+ dd_mu2_FF[ind1][ind2]*beta_2_gp +
-												// (this->pf*std::pow(sum_norm,PP-1)*II[p][k]*G_dual[gamma][omega]) + 
-												// 	(2.0*(PP-1.0)*this->pf*p_norm_F*
-												// 	(F_dual[p][omega] - F_0_dual[p][omega])*
-												// 	(F_dual[k][gamma] - F_0_dual[k][gamma])) +
+													(this->pf*std::pow(sum_norm,PP-1)*II[p][k]*G_dual[gamma][omega]) + 
+													(2.0*(PP-1.0)*this->pf*p_norm_F*
+													(F_dual[p][omega] - F_0_dual[p][omega])*
+													(F_dual[k][gamma] - F_0_dual[k][gamma])) +
 													(this->pf*II[p][k]*G_dual[gamma][omega]));
 						}
 					} 
 				}
 				else {
 
-					for (int p=0; p<dim; p++){
+					for (int p=0; p<this->dim; p++){
 						for (int omega=0; omega<2; omega++){
 
 							ind2 = p*2 + omega;
@@ -4502,10 +4781,10 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 
 							k_local[ind1][ind2] = (1.0/this->pf)*(dd_mu1_FF[ind1][ind2]*beta_1_gp
 													+ dd_mu2_FF[ind1][ind2]*beta_2_gp +
-												// (this->pf*std::pow(sum_norm,PP-1)*II[p][k]*G_dual[gamma][omega]) + 
-												// (2.0*(PP-1.0)*this->pf*p_norm_F*
-												// 	(F_dual[p][omega] - F_0_dual[p][omega])*
-												// 	(F_dual[k][gamma] - F_0_dual[k][gamma]))+
+													(this->pf*std::pow(sum_norm,PP-1)*II[p][k]*G_dual[gamma][omega]) + 
+													(2.0*(PP-1.0)*this->pf*p_norm_F*
+													(F_dual[p][omega] - F_0_dual[p][omega])*
+													(F_dual[k][gamma] - F_0_dual[k][gamma]))+
 													(this->pf*II[p][k]*G_dual[gamma][omega]));
 						}
 					} 
@@ -4532,12 +4811,27 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 		// solve for dF^k_gamma/dA22
 		ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_A22,dF_dA22); CHKERRQ(ierr);
 
+		if (problem_type == forward)
+		{
+			// solve for dF^k_gamma/dA31
+			ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_A31,dF_dA31); CHKERRQ(ierr);
+
+			// solve for dF^k_gamma/dA32
+			ierr = common_utilities->mysolve_local_linear_system(F_DOF,k_local,f_A32,dF_dA32); CHKERRQ(ierr);
+		}
+
 		ierr = fem->dot_product(d_mu1_F,dF_dbeta_1,&d_mu1_beta_1); CHKERRQ(ierr);
 		ierr = fem->dot_product(d_mu1_F,dF_dbeta_2,&d_mu1_beta_2); CHKERRQ(ierr);
 		ierr = fem->dot_product(d_mu1_F,dF_dA11,&d_mu1_A11); CHKERRQ(ierr);
 		ierr = fem->dot_product(d_mu1_F,dF_dA12,&d_mu1_A12); CHKERRQ(ierr);
 		ierr = fem->dot_product(d_mu1_F,dF_dA21,&d_mu1_A21); CHKERRQ(ierr);
 		ierr = fem->dot_product(d_mu1_F,dF_dA22,&d_mu1_A22); CHKERRQ(ierr);
+
+		if (problem_type == forward)
+		{
+			ierr = fem->dot_product(d_mu1_F,dF_dA31,&d_mu1_A31); CHKERRQ(ierr);
+			ierr = fem->dot_product(d_mu1_F,dF_dA32,&d_mu1_A32); CHKERRQ(ierr);
+		}	
 
 
 		ierr = fem->dot_product(d_mu2_F,dF_dbeta_1,&d_mu2_beta_1); CHKERRQ(ierr);
@@ -4547,17 +4841,36 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 		ierr = fem->dot_product(d_mu2_F,dF_dA21,&d_mu2_A21); CHKERRQ(ierr);
 		ierr = fem->dot_product(d_mu2_F,dF_dA22,&d_mu2_A22); CHKERRQ(ierr);
 
+		if (problem_type == forward)
+		{
+			ierr = fem->dot_product(d_mu2_F,dF_dA31,&d_mu2_A31); CHKERRQ(ierr);
+			ierr = fem->dot_product(d_mu2_F,dF_dA32,&d_mu2_A32); CHKERRQ(ierr);	
+		}
+
 		ierr = this->regularisation_residual_terms_calculation(i, E_real_el, A_el_gp, dA_zeta, 
 															dE1_zeta, dE2_zeta, G_real, G_dual,
 															A11_res1, A11_res2, A11_res3, A11_res4,
 															A12_res1, A12_res2, A12_res3, A12_res4,
 															A21_res1, A21_res2, A21_res3, A21_res4,
-															A22_res1, A22_res2, A22_res3, A22_res4); CHKERRQ(ierr);	
+															A22_res1, A22_res2, A22_res3, A22_res4,
+															A31_res1, A31_res2, A31_res3, A31_res4,
+															A32_res1, A32_res2, A32_res3, A32_res4); CHKERRQ(ierr);	
+
+		// std::cout << "code runs after finding regularisation_residual_terms_calculation" << std::endl;		
 
 		ierr = this->regularisation_stiffness_terms_calculation(i, E_real_el, G_dual, dE1_zeta,dE2_zeta,
-												A11_stiff1, A12_stiff1, A21_stiff1, A22_stiff1,
-												A11_stiff2, A12_stiff2, A21_stiff2, A22_stiff2,
-												A11_stiff3, A12_stiff3, A21_stiff3, A22_stiff3); CHKERRQ(ierr);
+												A11_stiff1, A12_stiff1, A21_stiff1, A22_stiff1, A31_stiff1, A32_stiff1,
+												A11_stiff2, A12_stiff2, A21_stiff2, A22_stiff2, A31_stiff2, A32_stiff2,
+												A11_stiff3, A12_stiff3, A21_stiff3, A22_stiff3, A31_stiff3, A32_stiff3); CHKERRQ(ierr);
+
+		// std::cout << "code runs after finding regularisation_stiffness_terms_calculation" << std::endl;	
+
+		ierr = this->get_derivatives_of_G_with_zeta(i,E_real_el,dE1_zeta,dE2_zeta,
+													&dG11_zeta2, &dG12_zeta1,
+													&dG21_zeta2, &dG22_zeta1); CHKERRQ(ierr);	
+
+
+		// std::cout << "code runs after finding get_derivatives_of_G_with_zeta" << std::endl;															
 
 		// stiffness matrix and residual vector
 		for (int p=0;p<fem->node_per_el;p++)
@@ -4583,6 +4896,14 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 
 				K[p*grid->dof_per_node][q*grid->dof_per_node+5] = d_mu1_A22*fem->psi[i][p]*fem->psi[i][q];
 
+				if (problem_type == forward)
+				{
+					K[p*grid->dof_per_node][q*grid->dof_per_node+6] = d_mu1_A31*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node][q*grid->dof_per_node+7] = d_mu1_A32*fem->psi[i][p]*fem->psi[i][q];
+				}
+
+				// ************************** //
 				// beta_2 coupling
 				K[p*grid->dof_per_node+1][q*grid->dof_per_node] = d_mu2_beta_1*fem->psi[i][p]*fem->psi[i][q];
 
@@ -4600,7 +4921,14 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 
 				K[p*grid->dof_per_node+1][q*grid->dof_per_node+5] = d_mu2_A22*fem->psi[i][p]*fem->psi[i][q];
 
+				if (problem_type == forward)
+				{
+					K[p*grid->dof_per_node+1][q*grid->dof_per_node+6] = d_mu2_A31*fem->psi[i][p]*fem->psi[i][q];
 
+					K[p*grid->dof_per_node+1][q*grid->dof_per_node+7] = d_mu2_A32*fem->psi[i][p]*fem->psi[i][q];
+				}
+
+				// ************************** //
 				// A11 coupling
 				K[p*grid->dof_per_node+2][q*grid->dof_per_node] = dF_dbeta_1[0]*fem->psi[i][p]*fem->psi[i][q];
 
@@ -4616,7 +4944,16 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 																	
 																	+ EPS3*(A11_stiff1[0]*fem->psi[i][p]*fem->psi[i][q])
 																	+ EPS3*(fem->psi[i][p]*A11_stiff2[0][q])
-																	+ EPS3*(fem->psi[i][q]*A11_stiff3[0][p]);
+																	+ EPS3*(fem->psi[i][q]*A11_stiff3[0][p])
+																	+ ONE_BY_EPS*fem->dpsi[i][p][1]*fem->dpsi[i][q][1]
+																	+ PEN_CURL*(G_real[0][0]*fem->dpsi[i][p][1] -
+																		G_real[0][1]*fem->dpsi[i][p][0] + 
+																		fem->psi[i][p]*dG11_zeta2 - 
+																		fem->psi[i][p]*dG12_zeta1)
+																		*(G_real[0][0]*fem->dpsi[i][q][1] + 
+																		fem->psi[i][q]*dG11_zeta2 - 
+																		G_real[0][1]*fem->dpsi[i][q][0] - 
+																		fem->psi[i][q]*dG12_zeta1);
 				
 				K[p*grid->dof_per_node+2][q*grid->dof_per_node+3] = (-1.0/this->px)*fem->dpsi[i][p][0]*fem->dpsi[i][q][1]
 																	+ dF_dA12[0]*fem->psi[i][p]*fem->psi[i][q] +
@@ -4628,13 +4965,30 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 																	
 																	+ EPS3*(A11_stiff1[1]*fem->psi[i][p]*fem->psi[i][q])
 																	+ EPS3*(fem->psi[i][p]*A11_stiff2[1][q])
-																	+ EPS3*(fem->psi[i][q]*A11_stiff3[1][p]);
+																	+ EPS3*(fem->psi[i][q]*A11_stiff3[1][p])
+																	- ONE_BY_EPS*fem->dpsi[i][p][1]*fem->dpsi[i][q][0]
+																	+ PEN_CURL*(G_real[0][0]*fem->dpsi[i][p][1] -
+																		G_real[0][1]*fem->dpsi[i][p][0] + 
+																		fem->psi[i][p]*dG11_zeta2 - 
+																		fem->psi[i][p]*dG12_zeta1)
+																		*(fem->dpsi[i][q][1]*G_real[1][0] 
+																		- fem->dpsi[i][q][0]*G_real[1][1]
+																		+ fem->psi[i][q]*dG21_zeta2 
+																		+ fem->psi[i][q]*dG22_zeta1);
 																		
 				
 				K[p*grid->dof_per_node+2][q*grid->dof_per_node+4] = dF_dA21[0]*fem->psi[i][p]*fem->psi[i][q];
 				
 				K[p*grid->dof_per_node+2][q*grid->dof_per_node+5] = dF_dA22[0]*fem->psi[i][p]*fem->psi[i][q];
 
+				if (problem_type == forward)
+				{
+					K[p*grid->dof_per_node+2][q*grid->dof_per_node+6] = dF_dA31[0]*fem->psi[i][p]*fem->psi[i][q];
+				
+					K[p*grid->dof_per_node+2][q*grid->dof_per_node+7] = dF_dA32[0]*fem->psi[i][p]*fem->psi[i][q];
+				}
+
+				// ************************** //
 				// A12 coupling
 				K[p*grid->dof_per_node+3][q*grid->dof_per_node] = dF_dbeta_1[1]*fem->psi[i][p]*fem->psi[i][q];
 				
@@ -4650,7 +5004,16 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 																	
 																	+ EPS3*(A12_stiff1[0]*fem->psi[i][p]*fem->psi[i][q])
 																	+ EPS3*(fem->psi[i][p]*A12_stiff2[0][q])
-																	+ EPS3*(fem->psi[i][q]*A12_stiff3[0][p]);
+																	+ EPS3*(fem->psi[i][q]*A12_stiff3[0][p])
+																	- ONE_BY_EPS*fem->dpsi[i][p][0]*fem->dpsi[i][q][1]
+																	+ PEN_CURL*(fem->dpsi[i][p][1]*G_real[1][0]
+																	 + fem->psi[i][p]*dG21_zeta2 
+																	 - fem->dpsi[i][p][0]*G_real[1][1]
+																	 - fem->psi[i][p]*dG22_zeta1)*
+																	 (fem->dpsi[i][q][1]*G_real[0][0] + 
+																	 fem->psi[i][q]*dG11_zeta2 - 
+																	 fem->dpsi[i][q][0]*G_real[0][1] -
+																	 fem->psi[i][q]*dG12_zeta1);
 																	
 				
 				K[p*grid->dof_per_node+3][q*grid->dof_per_node+3] = dF_dA12[1]*fem->psi[i][p]*fem->psi[i][q] +
@@ -4663,12 +5026,29 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 																	
 																	+ EPS3*(A12_stiff1[1]*fem->psi[i][p]*fem->psi[i][q])
 																	+ EPS3*(fem->psi[i][p]*A12_stiff2[1][q])
-																	+ EPS3*(fem->psi[i][q]*A12_stiff3[1][p]);
+																	+ EPS3*(fem->psi[i][q]*A12_stiff3[1][p])
+																	+ ONE_BY_EPS*fem->dpsi[i][p][0]*fem->dpsi[i][q][0]
+																	+ PEN_CURL*(fem->dpsi[i][p][1]*G_real[1][0]
+																	 + fem->psi[i][p]*dG21_zeta2 
+																	 - fem->dpsi[i][p][0]*G_real[1][1]
+																	 - fem->psi[i][p]*dG22_zeta1)*
+																	 (fem->dpsi[i][q][1]*G_real[1][0] + 
+																	 fem->psi[i][q]*dG21_zeta2 - 
+																	 fem->dpsi[i][q][0]*G_real[1][1] -
+																	 fem->psi[i][q]*dG22_zeta1);
 				
 				K[p*grid->dof_per_node+3][q*grid->dof_per_node+4] = dF_dA21[1]*fem->psi[i][p]*fem->psi[i][q];
 				
 				K[p*grid->dof_per_node+3][q*grid->dof_per_node+5] = dF_dA22[1]*fem->psi[i][p]*fem->psi[i][q];
 
+				if (problem_type == forward)
+				{
+					K[p*grid->dof_per_node+3][q*grid->dof_per_node+6] = dF_dA31[1]*fem->psi[i][p]*fem->psi[i][q];
+				
+					K[p*grid->dof_per_node+3][q*grid->dof_per_node+7] = dF_dA32[1]*fem->psi[i][p]*fem->psi[i][q];
+				}
+
+				// ************************** //
 				// A21 coupling
 				K[p*grid->dof_per_node+4][q*grid->dof_per_node] = dF_dbeta_1[2]*fem->psi[i][p]*fem->psi[i][q];
 				
@@ -4688,7 +5068,16 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 																	
 																	+ EPS3*(A21_stiff1[2]*fem->psi[i][p]*fem->psi[i][q])
 																	+ EPS3*(fem->psi[i][p]*A21_stiff2[2][q])
-																	+ EPS3*(fem->psi[i][q]*A21_stiff3[2][p]);
+																	+ EPS3*(fem->psi[i][q]*A21_stiff3[2][p])
+																	+ ONE_BY_EPS*fem->dpsi[i][p][1]*fem->dpsi[i][q][1]
+																	+ PEN_CURL*(fem->dpsi[i][p][1]*G_real[0][0]
+																		+ fem->psi[i][p]*dG11_zeta2
+																		- fem->dpsi[i][p][0]*G_real[0][1]
+																		+ fem->psi[i][p]*dG12_zeta1)
+																		*(fem->dpsi[i][q][1]*G_real[0][0]
+																		+ fem->psi[i][q]*dG11_zeta2
+																		- fem->dpsi[i][q][0]*G_real[0][1]
+																		- fem->psi[i][q]*dG12_zeta1);
 				
 				K[p*grid->dof_per_node+4][q*grid->dof_per_node+5] =  (-1.0/this->px)*fem->dpsi[i][p][0]*fem->dpsi[i][q][1] 
 																	+ dF_dA22[2]*fem->psi[i][p]*fem->psi[i][q] + 
@@ -4700,9 +5089,25 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 																	
 																	+ EPS3*(A21_stiff1[3]*fem->psi[i][p]*fem->psi[i][q])
 																	+ EPS3*(fem->psi[i][p]*A21_stiff2[3][q])
-																	+ EPS3*(fem->psi[i][q]*A21_stiff3[3][p]);
+																	+ EPS3*(fem->psi[i][q]*A21_stiff3[3][p])
+																	- ONE_BY_EPS*fem->dpsi[i][p][1]*fem->dpsi[i][q][0]
+																	+ PEN_CURL*(fem->dpsi[i][p][1]*G_real[0][0]
+																		+ fem->psi[i][p]*dG11_zeta2
+																		- fem->dpsi[i][p][0]*G_real[0][1]
+																		+ fem->psi[i][p]*dG12_zeta1)
+																		*(fem->dpsi[i][q][1]*G_real[1][0]
+																		+ fem->psi[i][q]*dG21_zeta2
+																		- fem->dpsi[i][q][0]*G_real[1][1]
+																		- fem->psi[i][q]*dG22_zeta1);
+				
+				if (problem_type == forward)
+				{
+					K[p*grid->dof_per_node+4][q*grid->dof_per_node+6] = dF_dA31[2]*fem->psi[i][p]*fem->psi[i][q];
+				
+					K[p*grid->dof_per_node+4][q*grid->dof_per_node+7] = dF_dA32[2]*fem->psi[i][p]*fem->psi[i][q];
+				}
 																		
-
+				// ************************** //
 				// A22 coupling
 				K[p*grid->dof_per_node+5][q*grid->dof_per_node] = dF_dbeta_1[3]*fem->psi[i][p]*fem->psi[i][q];
 				
@@ -4722,7 +5127,16 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 																	
 																	+ EPS3*(A22_stiff1[2]*fem->psi[i][p]*fem->psi[i][q])
 																	+ EPS3*(fem->psi[i][p]*A22_stiff2[2][q])
-																	+ EPS3*(fem->psi[i][q]*A22_stiff3[2][p]);
+																	+ EPS3*(fem->psi[i][q]*A22_stiff3[2][p])
+																	- ONE_BY_EPS*fem->dpsi[i][p][0]*fem->dpsi[i][q][1]
+																	+ PEN_CURL*(fem->dpsi[i][p][1]*G_real[1][0]
+																	  + fem->psi[i][p]*dG21_zeta2
+																	  - fem->dpsi[i][p][0]*G_real[1][1]
+																	  - fem->psi[i][p]*dG22_zeta1)
+																	  *(fem->dpsi[i][q][1]*G_real[0][0]
+																	  + fem->psi[i][q]*dG11_zeta2
+																	  - fem->dpsi[i][q][0]*G_real[0][1]
+																	  - fem->psi[i][q]*dG12_zeta1);
 																		
 				
 				K[p*grid->dof_per_node+5][q*grid->dof_per_node+5] = dF_dA22[3]*fem->psi[i][p]*fem->psi[i][q] +
@@ -4735,7 +5149,99 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 																	
 																	+ EPS3*(A22_stiff1[3]*fem->psi[i][p]*fem->psi[i][q])
 																	+ EPS3*(fem->psi[i][p]*A22_stiff2[3][q])
-																	+ EPS3*(fem->psi[i][q]*A22_stiff3[3][p]);
+																	+ EPS3*(fem->psi[i][q]*A22_stiff3[3][p])
+																	+ ONE_BY_EPS*fem->dpsi[i][p][0]*fem->dpsi[i][q][0]
+																	+ PEN_CURL*(fem->dpsi[i][p][1]*G_real[1][0]
+																	  + fem->psi[i][p]*dG21_zeta2
+																	  - fem->dpsi[i][p][0]*G_real[1][1]
+																	  - fem->psi[i][p]*dG22_zeta1)
+																	  *(fem->dpsi[i][q][1]*G_real[1][0]
+																	  + fem->psi[i][q]*dG21_zeta2
+																	  - fem->dpsi[i][q][0]*G_real[1][1]
+																	  - fem->psi[i][q]*dG22_zeta1);
+
+				if (problem_type == forward)
+				{
+					K[p*grid->dof_per_node+5][q*grid->dof_per_node+6] = dF_dA31[3]*fem->psi[i][p]*fem->psi[i][q];
+				
+					K[p*grid->dof_per_node+5][q*grid->dof_per_node+7] = dF_dA32[3]*fem->psi[i][p]*fem->psi[i][q];
+				}
+				// ************************** //
+
+				if (problem_type == forward)
+				{	
+					// ************************** //
+					// A31 coupling
+					K[p*grid->dof_per_node+6][q*grid->dof_per_node] = dF_dbeta_1[4]*fem->psi[i][p]*fem->psi[i][q];
+					
+					K[p*grid->dof_per_node+6][q*grid->dof_per_node+1] = dF_dbeta_2[4]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+6][q*grid->dof_per_node+2] = dF_dA11[4]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+6][q*grid->dof_per_node+3] = dF_dA12[4]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+6][q*grid->dof_per_node+4] = dF_dA21[4]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+6][q*grid->dof_per_node+5] = dF_dA22[4]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+6][q*grid->dof_per_node+6] = dF_dA31[4]*fem->psi[i][p]*fem->psi[i][q] + 
+																		(-1.0/this->px)*fem->dpsi[i][p][0]*fem->dpsi[i][q][0] +
+																		EPS3*G_real[0][0]*
+																		(fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] +
+																		fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
+																		fem->dpsi[i][p][1]*fem->dpsi[i][q][0]*G_dual[0][1] +
+																		fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1])
+																		+ EPS3*(A31_stiff1[4]*fem->psi[i][p]*fem->psi[i][q])
+																		+ EPS3*(fem->psi[i][p]*A31_stiff2[4][q])
+																		+ EPS3*(fem->psi[i][q]*A31_stiff3[4][p]);
+
+					K[p*grid->dof_per_node+6][q*grid->dof_per_node+7] = dF_dA32[4]*fem->psi[i][p]*fem->psi[i][q] + 
+																		(-1.0/this->px)*fem->dpsi[i][p][0]*fem->dpsi[i][q][1] +
+																		EPS3*G_real[1][0]*
+																		(fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] +
+																		fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
+																		fem->dpsi[i][p][1]*fem->dpsi[i][q][0]*G_dual[0][1] +
+																		fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1])
+																		+ EPS3*(A31_stiff1[5]*fem->psi[i][p]*fem->psi[i][q])
+																		+ EPS3*(fem->psi[i][p]*A31_stiff2[5][q])
+																		+ EPS3*(fem->psi[i][q]*A31_stiff3[5][p]);
+
+					// ************************** //
+					// A32 coupling
+					K[p*grid->dof_per_node+7][q*grid->dof_per_node] = dF_dbeta_1[5]*fem->psi[i][p]*fem->psi[i][q];
+					
+					K[p*grid->dof_per_node+7][q*grid->dof_per_node+1] = dF_dbeta_2[5]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+7][q*grid->dof_per_node+2] = dF_dA11[5]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+7][q*grid->dof_per_node+3] = dF_dA12[5]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+7][q*grid->dof_per_node+4] = dF_dA21[5]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+7][q*grid->dof_per_node+5] = dF_dA22[5]*fem->psi[i][p]*fem->psi[i][q];
+
+					K[p*grid->dof_per_node+7][q*grid->dof_per_node+6] = dF_dA31[5]*fem->psi[i][p]*fem->psi[i][q] + 
+																			(-1.0/this->px)*fem->dpsi[i][p][1]*fem->dpsi[i][q][0] + 
+																			EPS3*G_real[0][1]*
+																			(fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] +
+																			fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
+																			fem->dpsi[i][p][1]*fem->dpsi[i][q][0]*G_dual[0][1] +
+																			fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1])
+																			+ EPS3*(A32_stiff1[4]*fem->psi[i][p]*fem->psi[i][q])
+																			+ EPS3*(fem->psi[i][p]*A32_stiff2[4][q])
+																			+ EPS3*(fem->psi[i][q]*A32_stiff3[4][p]);
+
+					K[p*grid->dof_per_node+7][q*grid->dof_per_node+7] = dF_dA32[5]*fem->psi[i][p]*fem->psi[i][q] + 
+																			(-1.0/this->px)*fem->dpsi[i][p][1]*fem->dpsi[i][q][1] +
+																			EPS3*G_real[1][1]*
+																			(fem->dpsi[i][p][0]*fem->dpsi[i][q][0]*G_dual[0][0] +
+																			fem->dpsi[i][p][0]*fem->dpsi[i][q][1]*G_dual[1][0] +
+																			fem->dpsi[i][p][1]*fem->dpsi[i][q][0]*G_dual[0][1] +
+																			fem->dpsi[i][p][1]*fem->dpsi[i][q][1]*G_dual[1][1])
+																			+ EPS3*(A32_stiff1[5]*fem->psi[i][p]*fem->psi[i][q])
+																			+ EPS3*(fem->psi[i][p]*A32_stiff2[5][q])
+																			+ EPS3*(fem->psi[i][q]*A32_stiff3[5][p]);
+				}
 
 			}
 
@@ -4763,17 +5269,68 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 			// }
 
 			//A11
-			fe[p*grid->dof_per_node + 2] = fem->psi[i][p]*F[0][0] + fem->dpsi[i][p][0]*x_gp_el[i][0];
-											//+ EPS3*(A11_res1[p] + A11_res2[p] + A11_res3[p] +  A11_res4[p]);
+			fe[p*grid->dof_per_node + 2] = fem->psi[i][p]*F[0][0] + fem->dpsi[i][p][0]*x_gp_el[i][0] 
+
+											+ PEN_CURL*(((dA_zeta[0][1]*G_real[0][0] + dA_zeta[1][1]*G_real[1][0]
+											+ A_el_gp[0]*dG11_zeta2 + A_el_gp[1]*dG21_zeta2) - 
+											(dA_zeta[0][0]*G_real[0][1] + dA_zeta[1][0]*G_real[1][1]
+											 + A_el_gp[0]*dG12_zeta1 + A_el_gp[1]*dG22_zeta1))*
+											 (G_real[0][0]*fem->dpsi[i][p][1] - G_real[0][1]*fem->dpsi[i][p][0]
+											 + dG11_zeta2*fem->psi[i][p] - dG12_zeta1*fem->psi[i][p]))
+											+ ONE_BY_EPS*fem->dpsi[i][p][1]*(dA_zeta[0][1] - dA_zeta[1][0])
+											
+											+ EPS3_res*(A11_res1[p] + A11_res2[p] + A11_res3[p] + A11_res4[p]);
+			
+			// std::cout << " fe at " << p << " dof for " << i << " gp is " << fe[p*grid->dof_per_node + 2] << std::endl;
+			// std::cout << " fe at " << p << " dof for " << i << " gp is " << fe[p*grid->dof_per_node + 2] << std::endl;
+
 			//A12
-			fe[p*grid->dof_per_node + 3] = fem->psi[i][p]*F[0][1] + fem->dpsi[i][p][1]*x_gp_el[i][0];
-											//+ EPS3*(A12_res1[p] + A12_res2[p] + A12_res3[p] +  A12_res4[p]);
+			fe[p*grid->dof_per_node + 3] = fem->psi[i][p]*F[0][1] + fem->dpsi[i][p][1]*x_gp_el[i][0]
+											
+											+ PEN_CURL*(((dA_zeta[0][1]*G_real[0][0] + dA_zeta[1][1]*G_real[1][0]
+											+ A_el_gp[0]*dG11_zeta2 + A_el_gp[1]*dG21_zeta2) - 
+											(dA_zeta[0][0]*G_real[0][1] + dA_zeta[1][0]*G_real[1][1]
+											 + A_el_gp[0]*dG12_zeta1 + A_el_gp[1]*dG22_zeta1))*
+											 (G_real[1][0]*fem->dpsi[i][p][1] - G_real[1][1]*fem->dpsi[i][p][0]
+											 + dG21_zeta2*fem->psi[i][p] - dG22_zeta1*fem->psi[i][p]))
+											 - ONE_BY_EPS*fem->dpsi[i][p][0]*(dA_zeta[0][1] - dA_zeta[1][0])
+											 
+											 + EPS3_res*(A12_res1[p] + A12_res2[p] + A12_res3[p] +  A12_res4[p]);
 			//A21
-			fe[p*grid->dof_per_node + 4] = fem->psi[i][p]*F[1][0] + fem->dpsi[i][p][0]*x_gp_el[i][1];
-											//+ EPS3*(A21_res1[p] + A21_res2[p] + A21_res3[p] + A21_res4[p]);
+			fe[p*grid->dof_per_node + 4] = fem->psi[i][p]*F[1][0] + fem->dpsi[i][p][0]*x_gp_el[i][1]
+											
+											+ PEN_CURL*(((dA_zeta[2][1]*G_real[0][0] + dA_zeta[3][1]*G_real[1][0]
+											+ A_el_gp[2]*dG11_zeta2 + A_el_gp[3]*dG21_zeta2) - 
+											(dA_zeta[2][0]*G_real[0][1] + dA_zeta[3][0]*G_real[1][1]
+											 + A_el_gp[2]*dG12_zeta1 + A_el_gp[3]*dG22_zeta1))*
+											 (G_real[0][0]*fem->dpsi[i][p][1] - G_real[0][1]*fem->dpsi[i][p][0]
+											 + dG11_zeta2*fem->psi[i][p] - dG12_zeta1*fem->psi[i][p]))
+											+ ONE_BY_EPS*fem->dpsi[i][p][1]*(dA_zeta[2][1] - dA_zeta[3][0])
+											 
+											+ EPS3_res*(A21_res1[p] + A21_res2[p] + A21_res3[p] + A21_res4[p]);
 			//A22
-			fe[p*grid->dof_per_node + 5] = fem->psi[i][p]*F[1][1] + fem->dpsi[i][p][1]*x_gp_el[i][1];
-										   	//+ EPS3*(A22_res1[p] + A22_res2[p] + A22_res3[p] + A22_res4[p]);
+			fe[p*grid->dof_per_node + 5] = fem->psi[i][p]*F[1][1] + fem->dpsi[i][p][1]*x_gp_el[i][1]
+											
+											+ PEN_CURL*(((dA_zeta[2][1]*G_real[0][0] + dA_zeta[3][1]*G_real[1][0]
+											+ A_el_gp[2]*dG11_zeta2 + A_el_gp[3]*dG21_zeta2) - 
+											(dA_zeta[2][0]*G_real[0][1] + dA_zeta[3][0]*G_real[1][1]
+											 + A_el_gp[2]*dG12_zeta1 + A_el_gp[3]*dG22_zeta1))*
+											 (G_real[1][0]*fem->dpsi[i][p][1] - G_real[1][1]*fem->dpsi[i][p][0]
+											 + dG21_zeta2*fem->psi[i][p] - dG22_zeta1*fem->psi[i][p]))
+											- ONE_BY_EPS*fem->dpsi[i][p][0]*(dA_zeta[2][1] - dA_zeta[3][0])
+										   	
+											+ EPS3_res*(A22_res1[p] + A22_res2[p] + A22_res3[p] + A22_res4[p]);
+			
+			if (problem_type == forward){
+				
+				//A31
+				fe[p*grid->dof_per_node + 6] = fem->psi[i][p]*F[2][0] + fem->dpsi[i][p][0]*x_gp_el[i][2]
+												+ EPS3_res*(A31_res1[p] + A31_res2[p] + A31_res3[p] + A31_res4[p]);
+
+				//A32
+				fe[p*grid->dof_per_node + 7] = fem->psi[i][p]*F[2][1] + fem->dpsi[i][p][1]*x_gp_el[i][2]
+												+ EPS3_res*(A32_res1[p] + A32_res2[p] + A32_res3[p] + A32_res4[p]);
+			}
 		}
 
 		for (int p=0;p<fem->dof_per_el;p++){
@@ -4783,13 +5340,100 @@ PetscErrorCode Dual_Solve::elem_stiff_force_vector_global_newton(MyMat <double> 
 			}
 
 			rhs_el[p] = rhs_el[p] + (-1.0)*fe[p]*detJ_e[i]*fem->wt[i];
+			
+			// std::cout << " fe at " << p << " dof for " << i << " gp is " << fe[p] << std::endl;
 		}
 
 	}// loop over gpts
 
+	// std::cout << " rhs at 0 node" << " for A11 dof is " << rhs_el[0*grid->dof_per_node+2] << std::endl;
+	// std::cout << " rhs at 1 node" << " for A11 dof is " << rhs_el[1*grid->dof_per_node+2] << std::endl;
+	// std::cout << " rhs at 2 node" << " for A11 dof is " << rhs_el[2*grid->dof_per_node+2] << std::endl;
+	// std::cout << " rhs at 3 node" << " for A11 dof is " << rhs_el[3*grid->dof_per_node+2] << std::endl;
+
 	return 0;
 }
 
+PetscErrorCode Dual_Solve::get_derivatives_of_G_with_zeta(int i, MyMat <double> E_real_el,
+													MyMat <double> dE1_zeta, MyMat <double> dE2_zeta,
+													double *dG11_zeta2, double *dG12_zeta1,
+													double *dG21_zeta2, double *dG22_zeta1)
+{
+	PetscErrorCode ierr;
+
+	*dG11_zeta2 = 0.0;
+	*dG12_zeta1 = 0.0;
+	*dG21_zeta2 = 0.0;
+	*dG22_zeta1 = 0.0;
+
+	MyVec <double> v1(grid->X_DOF);
+	MyVec <double> v2(grid->X_DOF);
+	MyVec <double> v3(grid->X_DOF);
+	MyVec <double> v4(grid->X_DOF);
+
+	double scal1, scal2;
+
+	for (int k=0;k<grid->X_DOF; k++)
+	{
+		v1[k] = dE1_zeta[k][1];
+		v2[k] = E_real_el[i][k];
+	}
+
+	scal1  = 0.0;
+
+	ierr = fem->dot_product(v1, v2, &scal1);  CHKERRQ(ierr);
+
+	*dG11_zeta2 = 2.0*scal1;
+
+	for (int k=0; k<grid->X_DOF; k++){
+		v1[k] = dE1_zeta[k][0];
+		v2[k] = E_real_el[i][grid->X_DOF + k];
+
+		v3[k] = dE2_zeta[k][0];
+		v4[k] = E_real_el[i][k];
+
+	}
+
+	scal1  = 0.0; scal2 = 0.0;
+
+	ierr = fem->dot_product(v1, v2, &scal1);  CHKERRQ(ierr);
+
+	ierr = fem->dot_product(v3, v4, &scal2);  CHKERRQ(ierr);
+
+	*dG12_zeta1 = scal1 +  scal2;
+
+	for (int k=0; k<grid->X_DOF; k++){
+		v1[k] = dE2_zeta[k][1];
+		v2[k] = E_real_el[i][k];
+
+		v3[k] = dE1_zeta[k][1];
+		v4[k] = E_real_el[i][grid->X_DOF + k];
+
+	}
+
+	scal1  = 0.0; scal2 = 0.0;
+
+	ierr = fem->dot_product(v1, v2, &scal1);  CHKERRQ(ierr);
+
+	ierr = fem->dot_product(v3, v4, &scal2);  CHKERRQ(ierr);
+
+	*dG21_zeta2 = scal1 +  scal2;
+
+	for (int k=0; k<grid->X_DOF; k++){
+		v1[k] = dE2_zeta[k][0];
+		v2[k] = E_real_el[i][grid->X_DOF + k];
+
+	}
+
+	scal1  = 0.0; 
+
+	ierr = fem->dot_product(v1, v2, &scal1);  CHKERRQ(ierr);
+
+	*dG22_zeta1 = 2.0*scal1;
+
+
+	return 0;
+}
 
 PetscErrorCode Dual_Solve::regularisation_residual_terms_calculation(int i, MyMat <double> E_real_el, 
 													MyVec <double> A_el_gp, MyMat <double> dA_zeta, 
@@ -4802,7 +5446,11 @@ PetscErrorCode Dual_Solve::regularisation_residual_terms_calculation(int i, MyMa
 													MyVec <double> &A21_res1, MyVec <double> &A21_res2,
 													MyVec <double> &A21_res3, MyVec <double> &A21_res4,
 													MyVec <double> &A22_res1, MyVec <double> &A22_res2,
-													MyVec <double> &A22_res3, MyVec <double> &A22_res4)
+													MyVec <double> &A22_res3, MyVec <double> &A22_res4,
+													MyVec <double> &A31_res1, MyVec <double> &A31_res2,
+													MyVec <double> &A31_res3, MyVec <double> &A31_res4,
+													MyVec <double> &A32_res1, MyVec <double> &A32_res2,
+													MyVec <double> &A32_res3, MyVec <double> &A32_res4)
 {
 
 	PetscErrorCode ierr;
@@ -4835,6 +5483,11 @@ PetscErrorCode Dual_Solve::regularisation_residual_terms_calculation(int i, MyMa
 		A11_res3[p] = 0.0; A12_res3[p] = 0.0; A21_res3[p] = 0.0; A22_res3[p] = 0.0;
 		A11_res4[p] = 0.0; A12_res4[p] = 0.0; A21_res4[p] = 0.0; A22_res4[p] = 0.0;
 
+		A31_res1[p] = 0.0; A32_res1[p] = 0.0; 
+		A31_res2[p] = 0.0; A32_res2[p] = 0.0; 
+		A31_res3[p] = 0.0; A32_res3[p] = 0.0; 
+		A31_res4[p] = 0.0; A32_res4[p] = 0.0;
+
 		for (int gamma=0; gamma<2; gamma++){
 		
 			for (int alpha=0; alpha<2; alpha++){
@@ -4847,11 +5500,20 @@ PetscErrorCode Dual_Solve::regularisation_residual_terms_calculation(int i, MyMa
 					A12_res1[p] = A12_res1[p] + fem->dpsi[i][p][beta]*dA_zeta[gamma][alpha]*
 															G_real[gamma][1]*G_dual[alpha][beta];
 					
-					A21_res1[p] = A21_res1[p] + fem->dpsi[i][p][beta]*dA_zeta[this->dim + gamma][alpha]*
+					A21_res1[p] = A21_res1[p] + fem->dpsi[i][p][beta]*dA_zeta[2 + gamma][alpha]*
 															G_real[gamma][0]*G_dual[alpha][beta];
 
-					A22_res1[p] = A22_res1[p] + fem->dpsi[i][p][beta]*dA_zeta[this->dim + gamma][alpha]*
+					A22_res1[p] = A22_res1[p] + fem->dpsi[i][p][beta]*dA_zeta[2 + gamma][alpha]*
 															G_real[gamma][1]*G_dual[alpha][beta];
+
+					if (problem_type == forward)
+					{
+						A31_res1[p] = A31_res1[p] +  fem->dpsi[i][p][beta]*dA_zeta[4 + gamma][alpha]*
+																G_real[gamma][0]*G_dual[alpha][beta];
+
+						A32_res1[p] = A32_res1[p] +  fem->dpsi[i][p][beta]*dA_zeta[4 + gamma][alpha]*
+																G_real[gamma][1]*G_dual[alpha][beta];
+					}															
 
 					// term 2
 					if (gamma == 0){
@@ -4883,8 +5545,14 @@ PetscErrorCode Dual_Solve::regularisation_residual_terms_calculation(int i, MyMa
 
 					A11_res2[p] = A11_res2[p] + fem->psi[i][p]*A_el_gp[gamma]*G_dual[alpha][beta]*scal1;
 					A12_res2[p] = A12_res2[p] + fem->psi[i][p]*A_el_gp[gamma]*G_dual[alpha][beta]*scal2;
-					A21_res2[p] = A21_res2[p] + fem->psi[i][p]*A_el_gp[this->dim + gamma]*G_dual[alpha][beta]*scal1;
-					A22_res2[p] = A22_res2[p] + fem->psi[i][p]*A_el_gp[this->dim + gamma]*G_dual[alpha][beta]*scal2;
+					A21_res2[p] = A21_res2[p] + fem->psi[i][p]*A_el_gp[2 + gamma]*G_dual[alpha][beta]*scal1;
+					A22_res2[p] = A22_res2[p] + fem->psi[i][p]*A_el_gp[2 + gamma]*G_dual[alpha][beta]*scal2;
+					
+					if (problem_type == forward)
+					{
+						A31_res2[p] = A31_res2[p] + fem->psi[i][p]*A_el_gp[4 + gamma]*G_dual[alpha][beta]*scal1;
+						A32_res2[p] = A32_res2[p] + fem->psi[i][p]*A_el_gp[4 + gamma]*G_dual[alpha][beta]*scal2;
+					}
 					
 					v4[0] = E_real_el[i][grid->X_DOF*gamma];
 					v4[1] = E_real_el[i][grid->X_DOF*gamma+1];
@@ -4896,8 +5564,14 @@ PetscErrorCode Dual_Solve::regularisation_residual_terms_calculation(int i, MyMa
 					//term 3
 					A11_res3[p] = A11_res3[p] + fem->psi[i][p]*dA_zeta[gamma][alpha]*G_dual[alpha][beta]*scal3;
 					A12_res3[p] = A12_res3[p] + fem->psi[i][p]*dA_zeta[gamma][alpha]*G_dual[alpha][beta]*scal4;
-					A21_res3[p] = A21_res3[p] + fem->psi[i][p]*dA_zeta[this->dim + gamma][alpha]*G_dual[alpha][beta]*scal3;
-					A22_res3[p] = A22_res3[p] + fem->psi[i][p]*dA_zeta[this->dim + gamma][alpha]*G_dual[alpha][beta]*scal4;
+					A21_res3[p] = A21_res3[p] + fem->psi[i][p]*dA_zeta[2 + gamma][alpha]*G_dual[alpha][beta]*scal3;
+					A22_res3[p] = A22_res3[p] + fem->psi[i][p]*dA_zeta[2 + gamma][alpha]*G_dual[alpha][beta]*scal4;
+
+					if (problem_type == forward)
+					{
+						A31_res3[p] = A31_res3[p] + fem->psi[i][p]*dA_zeta[4 + gamma][alpha]*G_dual[alpha][beta]*scal3;
+						A32_res3[p] = A32_res3[p] + fem->psi[i][p]*dA_zeta[4 + gamma][alpha]*G_dual[alpha][beta]*scal4;
+					}
 
 					ierr = fem->dot_product(Ereal1,v1,&scal5); CHKERRQ(ierr);
 					ierr = fem->dot_product(Ereal2,v1,&scal6); CHKERRQ(ierr);
@@ -4905,8 +5579,13 @@ PetscErrorCode Dual_Solve::regularisation_residual_terms_calculation(int i, MyMa
 					//term 4
 					A11_res4[p] = A11_res4[p] + fem->dpsi[i][p][beta]*A_el_gp[gamma]*G_dual[alpha][beta]*scal5;
 					A12_res4[p] = A12_res4[p] + fem->dpsi[i][p][beta]*A_el_gp[gamma]*G_dual[alpha][beta]*scal6;
-					A21_res4[p] = A21_res4[p] + fem->dpsi[i][p][beta]*A_el_gp[this->dim + gamma]*G_dual[alpha][beta]*scal5;
-					A22_res4[p] = A22_res4[p] + fem->dpsi[i][p][beta]*A_el_gp[this->dim + gamma]*G_dual[alpha][beta]*scal6;
+					A21_res4[p] = A21_res4[p] + fem->dpsi[i][p][beta]*A_el_gp[2 + gamma]*G_dual[alpha][beta]*scal5;
+					A22_res4[p] = A22_res4[p] + fem->dpsi[i][p][beta]*A_el_gp[2 + gamma]*G_dual[alpha][beta]*scal6;
+
+					if (problem_type == forward){
+						A31_res4[p] = A31_res4[p] + fem->dpsi[i][p][beta]*A_el_gp[4 + gamma]*G_dual[alpha][beta]*scal5;
+						A32_res4[p] = A32_res4[p] + fem->dpsi[i][p][beta]*A_el_gp[4 + gamma]*G_dual[alpha][beta]*scal6;
+					}
 
 				}
 			}
@@ -4920,10 +5599,13 @@ PetscErrorCode Dual_Solve::regularisation_stiffness_terms_calculation(int i, MyM
 																	MyMat <double> dE1_zeta, MyMat <double> dE2_zeta,
 																	MyVec <double> &A11_stiff1, MyVec <double> &A12_stiff1,
 																	MyVec <double> &A21_stiff1, MyVec <double> &A22_stiff1,
+																	MyVec <double> &A31_stiff1, MyVec <double> &A32_stiff1,
 																	MyMat <double> &A11_stiff2, MyMat <double> &A12_stiff2,
 																	MyMat <double> &A21_stiff2, MyMat <double> &A22_stiff2,
+																	MyMat <double> &A31_stiff2, MyMat <double> &A32_stiff2,
 																	MyMat <double> &A11_stiff3, MyMat <double> &A12_stiff3,
-																	MyMat <double> &A21_stiff3, MyMat <double> &A22_stiff3)
+																	MyMat <double> &A21_stiff3, MyMat <double> &A22_stiff3,
+																	MyMat <double> &A31_stiff3, MyMat <double> &A32_stiff3)
 {
 
 	PetscErrorCode ierr;
@@ -4951,12 +5633,16 @@ PetscErrorCode Dual_Solve::regularisation_stiffness_terms_calculation(int i, MyM
 
 	for (int k=0; k<grid->A_DOF; k++){
 
-		A11_stiff1[k] = 0.0; A12_stiff1[k] = 0.0; A21_stiff1[k] = 0.0; A22_stiff1[k] = 0.0;
+		A11_stiff1[k] = 0.0; A12_stiff1[k] = 0.0; A21_stiff1[k] = 0.0; 
+		A22_stiff1[k] = 0.0; A31_stiff1[k] = 0.0; A32_stiff1[k] = 0.0;
 
 		for (int p=0; p<fem->node_per_el; p++){
 
-			A11_stiff2[k][p] = 0.0; A12_stiff2[k][p] = 0.0; A21_stiff2[k][p] = 0.0; A22_stiff2[k][p] = 0.0;
-			A11_stiff3[k][p] = 0.0; A12_stiff3[k][p] = 0.0; A21_stiff3[k][p] = 0.0; A22_stiff3[k][p] = 0.0;
+			A11_stiff2[k][p] = 0.0; A12_stiff2[k][p] = 0.0; A21_stiff2[k][p] = 0.0; 
+			A22_stiff2[k][p] = 0.0; A31_stiff2[k][p] = 0.0; A32_stiff2[k][p] = 0.0;
+			
+			A11_stiff3[k][p] = 0.0; A12_stiff3[k][p] = 0.0; A21_stiff3[k][p] = 0.0; 
+			A22_stiff3[k][p] = 0.0; A31_stiff3[k][p] = 0.0; A32_stiff3[k][p] = 0.0;
 
 		}
 	}
@@ -5017,9 +5703,18 @@ PetscErrorCode Dual_Solve::regularisation_stiffness_terms_calculation(int i, MyM
 			A22_stiff1[2] = A22_stiff1[2] + scal3*G_dual[alpha][beta];
 			A22_stiff1[3] = A22_stiff1[3] + scal4*G_dual[alpha][beta];
 
+			if (problem_type == forward)
+			{
+				A31_stiff1[4] = A31_stiff1[4] + scal1*G_dual[alpha][beta];
+				A31_stiff1[5] = A31_stiff1[5] + scal2*G_dual[alpha][beta];
 
-			for (int p=0;p<fem->node_per_el;p++){
-				
+				A32_stiff1[4] = A32_stiff1[4] + scal3*G_dual[alpha][beta];
+				A32_stiff1[5] = A32_stiff1[5] + scal4*G_dual[alpha][beta];
+			}
+
+			for (int p=0;p<fem->node_per_el;p++)
+			{
+
 				// term 3
 				A11_stiff2[0][p] = A11_stiff2[0][p] + fem->dpsi[i][p][alpha]*G_dual[alpha][beta]*scal5;
 				A11_stiff2[1][p] = A11_stiff2[1][p] + fem->dpsi[i][p][alpha]*G_dual[alpha][beta]*scal6;
@@ -5033,6 +5728,15 @@ PetscErrorCode Dual_Solve::regularisation_stiffness_terms_calculation(int i, MyM
 				A22_stiff2[2][p] = A22_stiff2[2][p] + fem->dpsi[i][p][alpha]*G_dual[alpha][beta]*scal7;
 				A22_stiff2[3][p] = A22_stiff2[3][p] + fem->dpsi[i][p][alpha]*G_dual[alpha][beta]*scal8;
 
+				if (problem_type == forward){
+
+					A31_stiff2[4][p] = A31_stiff2[4][p] + fem->dpsi[i][p][alpha]*G_dual[alpha][beta]*scal5;
+					A31_stiff2[5][p] = A31_stiff2[5][p] + fem->dpsi[i][p][alpha]*G_dual[alpha][beta]*scal6;
+
+					A32_stiff2[4][p] = A32_stiff2[4][p] + fem->dpsi[i][p][alpha]*G_dual[alpha][beta]*scal7;
+					A32_stiff2[5][p] = A32_stiff2[5][p] + fem->dpsi[i][p][alpha]*G_dual[alpha][beta]*scal8;
+				}
+
 				// term 4
 				A11_stiff3[0][p] = A11_stiff3[0][p] + fem->dpsi[i][p][beta]*G_dual[alpha][beta]*scal9;
 				A11_stiff3[1][p] = A11_stiff3[1][p] + fem->dpsi[i][p][beta]*G_dual[alpha][beta]*scal10;
@@ -5045,6 +5749,15 @@ PetscErrorCode Dual_Solve::regularisation_stiffness_terms_calculation(int i, MyM
 
 				A22_stiff3[2][p] = A22_stiff3[2][p] + fem->dpsi[i][p][beta]*G_dual[alpha][beta]*scal11;
 				A22_stiff3[3][p] = A22_stiff3[3][p] + fem->dpsi[i][p][beta]*G_dual[alpha][beta]*scal12;
+
+				if (problem_type == forward){
+
+					A31_stiff3[4][p] = A31_stiff3[4][p] + fem->dpsi[i][p][beta]*G_dual[alpha][beta]*scal9;
+					A31_stiff3[5][p] = A31_stiff3[5][p] + fem->dpsi[i][p][beta]*G_dual[alpha][beta]*scal10;
+
+					A32_stiff3[4][p] = A32_stiff3[4][p] + fem->dpsi[i][p][beta]*G_dual[alpha][beta]*scal11;
+					A32_stiff3[5][p] = A32_stiff3[5][p] + fem->dpsi[i][p][beta]*G_dual[alpha][beta]*scal12;
+				}
 
 			}
 		}
@@ -5065,31 +5778,69 @@ PetscErrorCode Dual_Solve::global_newton_solve_bcs(Mat &K_dual, Vec &rhs_vec, Ve
 
   	int rows_full[tbel];
 
-  	for (int i=0;i<grid->nbel;i++){
+	if (problem_type == inverse)
+	{
+		for (int i=0;i<grid->nbel;i++){
 
-  		// rows[0] = grid->dof_per_node*grid->b_el_conn[i][0];
-  		// rows[1] = grid->dof_per_node*grid->b_el_conn[i][0]+1;
-  		rows[0] = grid->dof_per_node*grid->b_el_conn[i][0]+2;
-	  	rows[1] = grid->dof_per_node*grid->b_el_conn[i][0]+3;
-	  	rows[2] = grid->dof_per_node*grid->b_el_conn[i][0]+4;
-	  	rows[3] = grid->dof_per_node*grid->b_el_conn[i][0]+5;
+			// rows[0] = grid->dof_per_node*grid->b_el_conn[i][0];
+			// rows[1] = grid->dof_per_node*grid->b_el_conn[i][0]+1;
+			rows[0] = grid->dof_per_node*grid->b_el_conn[i][0]+2;
+			rows[1] = grid->dof_per_node*grid->b_el_conn[i][0]+3;
+			rows[2] = grid->dof_per_node*grid->b_el_conn[i][0]+4;
+			rows[3] = grid->dof_per_node*grid->b_el_conn[i][0]+5;
 
-	  	// val[0] = 0.0;
-	  	// val[1] = 0.0;
-	  	val[0] = 0.0;
-	  	val[1] = 0.0;
-	  	val[2] = 0.0;
-	  	val[3] = 0.0;
+			// val[0] = 0.0;
+			// val[1] = 0.0;
+			val[0] = 0.0;
+			val[1] = 0.0;
+			val[2] = 0.0;
+			val[3] = 0.0;
 
-	  	// rows_full[2*i] = rows[0];
-	  	// rows_full[2*i+1] = rows[1];
-	  	rows_full[grid->A_DOF*i] = rows[0];
-	  	rows_full[grid->A_DOF*i+1] = rows[1];
-	  	rows_full[grid->A_DOF*i+2] = rows[2];
-	  	rows_full[grid->A_DOF*i+3] = rows[3];
+			// rows_full[2*i] = rows[0];
+			// rows_full[2*i+1] = rows[1];
+			rows_full[grid->A_DOF*i] = rows[0];
+			rows_full[grid->A_DOF*i+1] = rows[1];
+			rows_full[grid->A_DOF*i+2] = rows[2];
+			rows_full[grid->A_DOF*i+3] = rows[3];
 
-		ierr = VecSetValues(delta_dual_vec,grid->A_DOF,rows,val,INSERT_VALUES); CHKERRQ(ierr);
-		ierr = VecSetValues(rhs_vec,grid->A_DOF,rows,val,INSERT_VALUES); CHKERRQ(ierr);
+			ierr = VecSetValues(delta_dual_vec,grid->A_DOF,rows,val,INSERT_VALUES); CHKERRQ(ierr);
+			ierr = VecSetValues(rhs_vec,grid->A_DOF,rows,val,INSERT_VALUES); CHKERRQ(ierr);
+		}
+	}
+	else if (problem_type == forward)
+	{
+		for (int i=0;i<grid->nbel;i++){
+
+			// rows[0] = grid->dof_per_node*grid->b_el_conn[i][0];
+			// rows[1] = grid->dof_per_node*grid->b_el_conn[i][0]+1;
+			rows[0] = grid->dof_per_node*grid->b_el_conn[i][0]+2;
+			rows[1] = grid->dof_per_node*grid->b_el_conn[i][0]+3;
+			rows[2] = grid->dof_per_node*grid->b_el_conn[i][0]+4;
+			rows[3] = grid->dof_per_node*grid->b_el_conn[i][0]+5;
+			rows[4] = grid->dof_per_node*grid->b_el_conn[i][0]+6;
+			rows[5] = grid->dof_per_node*grid->b_el_conn[i][0]+7;
+
+			// val[0] = 0.0;
+			// val[1] = 0.0;
+			val[0] = 0.0;
+			val[1] = 0.0;
+			val[2] = 0.0;
+			val[3] = 0.0;
+			val[4] = 0.0;
+			val[5] = 0.0;
+
+			// rows_full[2*i] = rows[0];
+			// rows_full[2*i+1] = rows[1];
+			rows_full[grid->A_DOF*i] = rows[0];
+			rows_full[grid->A_DOF*i+1] = rows[1];
+			rows_full[grid->A_DOF*i+2] = rows[2];
+			rows_full[grid->A_DOF*i+3] = rows[3];
+			rows_full[grid->A_DOF*i+4] = rows[4];
+			rows_full[grid->A_DOF*i+5] = rows[5];
+
+			ierr = VecSetValues(delta_dual_vec,grid->A_DOF,rows,val,INSERT_VALUES); CHKERRQ(ierr);
+			ierr = VecSetValues(rhs_vec,grid->A_DOF,rows,val,INSERT_VALUES); CHKERRQ(ierr);
+		}
 	}
 
 	// final assembly of global vector
@@ -5303,8 +6054,8 @@ PetscErrorCode Dual_Solve::get_elem_dual_l2_norm(MyMat <double> beta_el, MyMat <
 
 		// S_m1 = std::pow(std::abs(mu1-lambda_1*lambda_1),1.0+EPS)*beta_1_gp;
 		// S_m2 = std::pow(std::abs(mu2-lambda_2*lambda_2),1.0+EPS)*beta_2_gp;
-		S_m1 = mu1-(lambda_1*lambda_1);
-		S_m2 = mu2-(lambda_2*lambda_2);
+		S_m1 = (mu1-(lambda_1*lambda_1))*beta_1_gp;
+		S_m2 = (mu2-(lambda_2*lambda_2))*beta_2_gp;
 		qf = (mu1- (lambda_1*lambda_1))*(mu1- (lambda_1*lambda_1)) + 
 				(mu2- (lambda_2*lambda_2))*(mu2- (lambda_2*lambda_2));
 
@@ -5323,7 +6074,7 @@ PetscErrorCode Dual_Solve::get_elem_dual_l2_norm(MyMat <double> beta_el, MyMat <
 		}
 
 		// check for det F (throws error if det (dx_zeta) < 1e-4)
-		ierr = determinant_of_F(dx_zeta,G_real,&det_F); CHKERRQ(ierr);
+		ierr = this->determinant_of_F(dx_zeta,G_real,&det_F); CHKERRQ(ierr);
 
 
 		for (int k1=0;k1<this->dim; k1++){
@@ -5343,8 +6094,17 @@ PetscErrorCode Dual_Solve::get_elem_dual_l2_norm(MyMat <double> beta_el, MyMat <
 			}
 		}
 
-		S_quad_H  = S_quad_H + 0.5*this->px*((x_gp_el[i][0] - x_0_gp_el[i][0])*(x_gp_el[i][0] - x_0_gp_el[i][0]) 
+		if (problem_type == inverse)
+		{
+			S_quad_H  = S_quad_H + 0.5*this->px*((x_gp_el[i][0] - x_0_gp_el[i][0])*(x_gp_el[i][0] - x_0_gp_el[i][0]) 
 											+ (x_gp_el[i][1] - x_0_gp_el[i][1])*(x_gp_el[i][1] - x_0_gp_el[i][1]));
+		}
+		else if (problem_type == forward)
+		{
+			S_quad_H  = S_quad_H + 0.5*this->px*((x_gp_el[i][0] - x_0_gp_el[i][0])*(x_gp_el[i][0] - x_0_gp_el[i][0]) 
+											+ (x_gp_el[i][1] - x_0_gp_el[i][1])*(x_gp_el[i][1] - x_0_gp_el[i][1])
+											+ (x_gp_el[i][2] - x_0_gp_el[i][2])*(x_gp_el[i][2] - x_0_gp_el[i][2]));
+		}
 
 
 		*S_m1_el = *S_m1_el + S_m1*detJ_e[i]*fem->wt[i];
@@ -6048,18 +6808,17 @@ PetscErrorCode Dual_Solve::tranform_F_to_dual(MyMat<double> F_gp, MyMat<double> 
 	// F_gp -->  F^k_\gamma c_k \otimes E^\gamma
 	// F_gp_dual --> F_k^\gamma c^k \otimes E_\gamma
 
-	for (int k=0;k<dim;k++){
+	for (int k=0;k<this->dim;k++){
 		for (int gamma=0;gamma<2;gamma++){
 
 			F_gp_dual[k][gamma] = 0.0;
 
-			for (int p=0;p<dim;p++){
+			for (int p=0;p<this->dim;p++){
 				for (int beta=0;beta<2;beta++){
 
 					F_gp_dual[k][gamma] = F_gp_dual[k][gamma] + II[p][k]*G_dual[beta][gamma]*F_gp[p][beta];
 				}
 			}
-
 		}
 	}
 
@@ -6132,11 +6891,13 @@ inline PetscErrorCode Dual_Solve::eigenvectors_on_target_shape(MyVec <double> ei
 														MyVec <double> &Eig1 , MyVec <double> &Eig2)
 {
 
-	for (int k=0; k<this->dim; k++){
+	for (int k=0; k<2; k++){
 
 		Eig1[k] = 0.0;
 		Eig2[k] = 0.0;
+	}
 
+	for (int k=0; k<2; k++){
 		for (int gamma=0; gamma<2; gamma++){
 			for (int alpha=0; alpha<2; alpha++){
 
@@ -6150,15 +6911,81 @@ inline PetscErrorCode Dual_Solve::eigenvectors_on_target_shape(MyVec <double> ei
 	return 0;
 }
 
+inline PetscErrorCode Dual_Solve::eigenvectors_on_reference_shape(MyVec <double> eig_v1, MyVec <double> eig_v2,
+															MyMat <double> E_dual_el,int i,
+															MyVec <double> &Eig1, MyVec <double> &Eig2)
+{
+	
+	for (int k=0; k<2; k++){
+
+		Eig1[k] = 0.0;
+		Eig2[k] = 0.0;
+
+		for (int alpha=0; alpha<2; alpha++){
+
+			Eig1[k] = Eig1[k] +  eig_v1[alpha]*E_dual_el[i][grid->X_DOF*alpha+k];
+			Eig2[k] = Eig2[k] +  eig_v2[alpha]*E_dual_el[i][grid->X_DOF*alpha+k];
+		}
+	}
+
+	return 0;
+}
 
 
-PetscErrorCode Dual_Solve::delete_petsc_objects()
+
+PetscErrorCode Dual_Solve::delete_petsc_objects_newton_raphson()
 {
 
 	// delete objects
-	MatDestroy(&K_xi);	VecDestroy(&F_xi); VecDestroy(&xi_vec);
+	// MatDestroy(&K_xi);	VecDestroy(&F_xi); VecDestroy(&xi_vec);
 
-	KSPDestroy(&ksp_xi); VecScatterDestroy(&ctx_xi); VecDestroy(&xi_vec_SEQ);
+	// KSPDestroy(&ksp_xi); VecScatterDestroy(&ctx_xi); VecDestroy(&xi_vec_SEQ);
+
+	// deleting objects
+	VecDestroy(&rhs_vec);	VecDestroy(&dual_vec);
+
+	VecDestroy(&delta_dual_vec);
+
+	VecScatterDestroy(&ctx_dual); VecDestroy(&dual_vec_SEQ);
+
+	MatDestroy(&K_xdef); MatDestroy(&K_dual);
+
+	VecDestroy(&F_xdef);  VecDestroy(&xdef_vec);
+
+	MatDestroy(&Ke_local); VecDestroy(&Fe_local); VecDestroy(&local_vec); KSPDestroy(&ksp_local);
+
+	KSPDestroy(&ksp_xdef); KSPDestroy(&ksp_dual);
+
+	VecScatterDestroy(&ctx_xdef); VecDestroy(&xdef_vec_SEQ);
+
+	return 0;
+}
+
+
+PetscErrorCode Dual_Solve::delete_petsc_objects_gradient_flow()
+{
+
+	// delete objects
+	// MatDestroy(&K_xi);	VecDestroy(&F_xi); VecDestroy(&xi_vec);
+
+	// KSPDestroy(&ksp_xi); VecScatterDestroy(&ctx_xi); VecDestroy(&xi_vec_SEQ);
+
+	// deleting objects
+	VecDestroy(&rhs_vec);	VecDestroy(&dual_vec);
+
+	VecDestroy(&mass_vec); VecDestroy(&rhs_vec_final);
+
+	VecScatterDestroy(&ctx_dual); VecDestroy(&dual_vec_SEQ);
+
+	MatDestroy(&K_xdef); MatDestroy(&K_dual);
+
+	VecDestroy(&F_xdef);  VecDestroy(&xdef_vec);
+
+	MatDestroy(&Ke_local); VecDestroy(&Fe_local); VecDestroy(&local_vec); KSPDestroy(&ksp_local);
+
+	KSPDestroy(&ksp_xdef); 
+
+	VecScatterDestroy(&ctx_xdef); VecDestroy(&xdef_vec_SEQ);
 
 	return 0;
 }
