@@ -15,5 +15,5 @@ PETSc (MPI)
 
 
 # before running
-create outputs directory --> stores files for outputting
-create a restart directory --> stores files for restarting the code
+1. create outputs directory --> stores files for outputting
+2. create a restart directory --> stores files for restarting the code
